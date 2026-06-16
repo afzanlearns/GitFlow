@@ -175,10 +175,10 @@ def monthly(year: int, month: int):
     data = analytics.get_monthly_report(year, month)
 
     console.print(f"\n[bold]Monthly Report - {year}-{month:02d}[/bold]\n")
-    console.print(f"Commits: {data['commit_count']}")
-    console.print(f"Lines Added: +{data['lines_added']}")
-    console.print(f"Lines Deleted: -{data['lines_deleted']}")
-    console.print(f"Average/Day: {data['avg_per_day']:.1f}")
-    console.print(f"Productivity Score: {data['productivity_score']}/100\n")
+    console.print(f"Commits: {data.get('commit_count', 0)}")
+    console.print(f"Lines Added: +{data.get('lines_added', 0)}")
+    console.print(f"Lines Deleted: -{data.get('lines_deleted', 0)}")
+    console.print(f"Average/Day: {data.get('avg_per_day', 0):.1f}")
+    console.print(f"Productivity Score: {data.get('productivity_score', 0)}/100\n")
 
     session.close()

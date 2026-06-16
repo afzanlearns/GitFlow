@@ -3,6 +3,7 @@ from typing import List, Optional, Dict
 from datetime import datetime, timedelta
 import git
 from git import Repo
+from git.exc import InvalidGitRepositoryError
 import logging
 
 logger = logging.getLogger(__name__)
@@ -16,10 +17,20 @@ class GitScraper:
     def add_repository(self, repo_path: Path) -> bool:
         try:
             repo = Repo(repo_path)
-            repo.remotes.origin.fetch()
-        except Exception as e:
-            logger.error(f"Invalid repo at {repo_path}: {e}")
+        except InvalidGitRepositoryError:
+            logger.error(f"Invalid git repository at {repo_path}")
             return False
+        except Exception as e:
+            logger.error(f"Error accessing repo at {repo_path}: {e}")
+            return False
+
+        try:
+            if repo.remotes:
+                repo.remotes.origin.fetch()
+        except (IndexError, AttributeError):
+            pass
+        except Exception as e:
+            logger.warning(f"Could not fetch from remote for {repo_path}: {e}")
 
         from src.gitflow.models import Repository
 
@@ -29,14 +40,19 @@ class GitScraper:
 
         try:
             remote_url = repo.remotes.origin.url
-        except IndexError:
+        except (IndexError, AttributeError):
             remote_url = None
+
+        try:
+            default_branch = repo.active_branch.name
+        except (TypeError, ValueError):
+            default_branch = 'main'
 
         repository = Repository(
             path=str(repo_path),
             name=repo_path.name,
             remote_url=remote_url,
-            default_branch=repo.active_branch.name
+            default_branch=default_branch
         )
 
         self.db.add(repository)

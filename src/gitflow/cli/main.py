@@ -1,5 +1,6 @@
 import click
 from pathlib import Path
+from datetime import datetime, timedelta
 from src.gitflow.cli.commands.report import report
 from src.gitflow.scraper.git_scraper import GitScraper
 from src.gitflow.db import get_session
@@ -36,7 +37,6 @@ def add(repo_path: str):
 @click.option('--since', default='1day', help='Since when (1day, 7days, 30days, or YYYY-MM-DD)')
 def scan(since: str):
     """Scan repositories for new commits"""
-    from datetime import timedelta, datetime
     from src.gitflow.models import Repository
 
     session = get_session()
