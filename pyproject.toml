@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel>=0.41"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gitflow"
+version = "1.0.0"
+description = "Git commit analytics and tracking tool"
+readme = "README.md"
+requires-python = ">=3.10"
+
+dependencies = [
+    "GitPython>=3.1.40",
+    "click>=8.1.7",
+    "rich>=13.7.0",
+    "sqlalchemy>=2.0.25",
+    "apscheduler>=3.10.4",
+    "python-dotenv>=1.0.0",
+    "pandas>=2.1.0",
+    "numpy>=1.26.0",
+]
+
+[project.optional-dependencies]
+dashboard = [
+    "fastapi>=0.109.0",
+    "uvicorn>=0.27.0",
+    "websockets>=12.0",
+]
+notifications = [
+    "plyer>=2.1.0",
+    "requests>=2.31.0",
+]
+all = [
+    "fastapi>=0.109.0",
+    "uvicorn>=0.27.0",
+    "websockets>=12.0",
+    "plyer>=2.1.0",
+    "requests>=2.31.0",
+]
+
+[project.scripts]
+gitflow = "gitflow.cli.main:cli"
+
+[tool.setuptools.packages.find]
+where = ["src"]
