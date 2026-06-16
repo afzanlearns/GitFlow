@@ -1,11 +1,15 @@
 from fastapi import FastAPI, Request, WebSocket, Query, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.staticfiles import StaticFiles
 from datetime import datetime, timedelta, date
+from pathlib import Path
 from pydantic import ValidationError
 from slowapi.errors import RateLimitExceeded
 import asyncio
 import logging
+import os
 import time
 
 from gitflow.dashboard.api.auth import verify_token
@@ -464,3 +468,39 @@ async def websocket_endpoint(websocket: WebSocket):
         })
 
         await asyncio.sleep(30)
+
+
+# ---------------------------------------------------------------------------
+# Frontend serving
+# IMPORTANT: these routes and the static mount MUST come after all /api/*
+# routes so that API paths are never shadowed.
+# ---------------------------------------------------------------------------
+
+from gitflow.dashboard.api.html_dashboard import get_html_dashboard  # noqa: E402
+
+_FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
+
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def root():
+    """Serve React frontend or fallback HTML dashboard."""
+    return get_html_dashboard()
+
+
+@app.get("/index.html", response_class=HTMLResponse, include_in_schema=False)
+async def index_html():
+    """Alias for /"""
+    return get_html_dashboard()
+
+
+# Mount React build if it exists – this must be the LAST mount so it only
+# catches paths not already handled by the routes above.
+if _FRONTEND_DIST.exists():
+    app.mount("/", StaticFiles(directory=str(_FRONTEND_DIST), html=True), name="static")
+    logger.info("Serving React frontend from %s", _FRONTEND_DIST)
+else:
+    logger.info(
+        "React build not found at %s. Using HTML fallback dashboard. "
+        "To build: cd src/gitflow/dashboard/frontend && npm install && npm run build",
+        _FRONTEND_DIST,
+    )
