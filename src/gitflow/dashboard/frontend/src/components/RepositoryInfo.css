@@ -1,0 +1,144 @@
+.repo-section {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 24px;
+}
+
+.repo-container,
+.patterns-container {
+  padding: 24px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  transition: all 200ms;
+}
+
+.repo-container:hover,
+.patterns-container:hover {
+  border-color: var(--text-secondary);
+  box-shadow: var(--shadow-sm);
+}
+
+.section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 16px;
+  letter-spacing: -0.2px;
+}
+
+/* Table Styles */
+.repo-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.repo-table thead {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.repo-table th {
+  padding: 12px 8px;
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+}
+
+.repo-table td {
+  padding: 12px 8px;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text-secondary);
+}
+
+.repo-table tbody tr:hover {
+  background: var(--bg-secondary);
+}
+
+.cell-repo {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.cell-branch {
+  font-family: 'Menlo', 'Monaco', monospace;
+  color: var(--accent-primary);
+  font-size: 12px;
+}
+
+.cell-url code {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.cell-commits {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.empty {
+  text-align: center;
+  color: var(--text-tertiary);
+  padding: 24px !important;
+}
+
+/* Insights Grid */
+.insights-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.insight-card {
+  padding: 12px;
+  background: var(--bg-secondary);
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+}
+
+.insight-label {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.insight-value {
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.insight-value.code {
+  font-family: 'Menlo', 'Monaco', monospace;
+  font-size: 11px;
+  color: var(--accent-primary);
+  word-break: break-all;
+}
+
+@media (max-width: 1024px) {
+  .repo-section {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .repo-container,
+  .patterns-container {
+    padding: 16px;
+  }
+
+  .repo-table {
+    font-size: 12px;
+  }
+
+  .repo-table th,
+  .repo-table td {
+    padding: 8px 4px;
+  }
+}
