@@ -2,13 +2,15 @@ from fastapi import FastAPI, Request, WebSocket, Query, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from datetime import datetime, timedelta, date
+from pydantic import ValidationError
+from slowapi.errors import RateLimitExceeded
 import asyncio
 import logging
 import time
 
 from gitflow.dashboard.api.auth import verify_token
 from gitflow.dashboard.api.limiter import limiter, rate_limit_exceeded_handler
-from gitflow.dashboard.api.schemas import FilterParams, SearchParams
+from gitflow.dashboard.api.schemas import FilterParams, SearchParams, ExportParams
 from gitflow.dashboard.api.health import HealthChecker
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.middleware import SlowAPIMiddleware
@@ -28,8 +30,18 @@ app.add_middleware(
 )
 
 app.state.limiter = limiter
-app.add_exception_handler(429, rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
+
+@app.exception_handler(ValidationError)
+async def validation_exception_handler(request: Request, exc: ValidationError):
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": exc.errors()
+        }
+    )
 
 
 async def optional_auth(credentials: HTTPAuthorizationCredentials = Depends(security)):
@@ -83,7 +95,7 @@ async def readiness_probe(request: Request):
 
 @app.get("/api/dashboard")
 @limiter.limit("10/minute")
-def get_dashboard(request, auth=Depends(optional_auth)):
+async def get_dashboard(request: Request, auth=Depends(optional_auth)):
     from gitflow.db import get_session
     from gitflow.analytics.analytics_engine import AnalyticsEngine
 
@@ -112,7 +124,7 @@ def get_dashboard(request, auth=Depends(optional_auth)):
 
 @app.get("/api/history/{days}")
 @limiter.limit("10/minute")
-def get_history(request, days: int = 30, auth=Depends(optional_auth)):
+async def get_history(request: Request, days: int = 30, auth=Depends(optional_auth)):
     from gitflow.db import get_session
     from gitflow.models import DailyStat
 
@@ -140,7 +152,7 @@ def get_history(request, days: int = 30, auth=Depends(optional_auth)):
 
 @app.get("/api/repos")
 @limiter.limit("20/minute")
-def get_repos(request, auth=Depends(optional_auth)):
+async def get_repos(request: Request, auth=Depends(optional_auth)):
     from gitflow.db import get_session
     from gitflow.models import Repository
 
@@ -162,7 +174,7 @@ def get_repos(request, auth=Depends(optional_auth)):
 
 @app.get("/api/streaks")
 @limiter.limit("10/minute")
-def get_streaks(request, auth=Depends(optional_auth)):
+async def get_streaks(request: Request, auth=Depends(optional_auth)):
     from gitflow.db import get_session
     from gitflow.models import Commit
     from gitflow.analytics.analytics_engine import AnalyticsEngine
@@ -188,7 +200,7 @@ def get_streaks(request, auth=Depends(optional_auth)):
 
 @app.get("/api/search")
 @limiter.limit("30/minute")
-def search(request, params: SearchParams = Depends(), auth=Depends(optional_auth)):
+async def search(request: Request, params: SearchParams = Depends(), auth=Depends(optional_auth)):
     from gitflow.db import get_session
     from gitflow.models import Commit, CommitFile
 
@@ -251,7 +263,7 @@ def search(request, params: SearchParams = Depends(), auth=Depends(optional_auth
 
 @app.get("/api/filter")
 @limiter.limit("30/minute")
-def filter_commits(request, params: FilterParams = Depends(), auth=Depends(optional_auth)):
+async def filter_commits(request: Request, params: FilterParams = Depends(), auth=Depends(optional_auth)):
     from gitflow.db import get_session
     from gitflow.models import Commit, Repository, CommitFile
 
@@ -303,7 +315,7 @@ def filter_commits(request, params: FilterParams = Depends(), auth=Depends(optio
 
 @app.get("/api/authors")
 @limiter.limit("20/minute")
-def get_authors(request, auth=Depends(optional_auth)):
+async def get_authors(request: Request, auth=Depends(optional_auth)):
     from gitflow.db import get_session
     from gitflow.models import Commit
     from sqlalchemy import func
@@ -329,7 +341,7 @@ def get_authors(request, auth=Depends(optional_auth)):
 
 @app.get("/api/hot-files")
 @limiter.limit("20/minute")
-def get_hot_files(request, days: int = Query(30, description='Days of history'), auth=Depends(optional_auth)):
+async def get_hot_files(request: Request, days: int = Query(30, description='Days of history'), auth=Depends(optional_auth)):
     from gitflow.db import get_session
     from gitflow.models import Commit, CommitFile
     from sqlalchemy import func
@@ -358,7 +370,7 @@ def get_hot_files(request, days: int = Query(30, description='Days of history'),
 
 @app.get("/api/commit-by-language")
 @limiter.limit("20/minute")
-def get_commits_by_language(request, days: int = Query(30, description='Days of history'), auth=Depends(optional_auth)):
+async def get_commits_by_language(request: Request, days: int = Query(30, description='Days of history'), auth=Depends(optional_auth)):
     from gitflow.db import get_session
     from gitflow.models import Commit, CommitFile
     from sqlalchemy import func
@@ -389,6 +401,54 @@ def get_commits_by_language(request, days: int = Query(30, description='Days of 
         {'language': lang, 'commits': count}
         for lang, count in sorted(language_map.items(), key=lambda x: x[1], reverse=True)
     ]
+
+
+@app.post("/api/export")
+@limiter.limit("5/minute")
+async def export(request: Request, params: ExportParams = Depends(), auth=Depends(optional_auth)):
+    """Export commits with validated parameters"""
+    from gitflow.db import get_session
+    from gitflow.models import Commit
+    from fastapi.responses import Response
+
+    session = get_session()
+    since = datetime.now() - timedelta(days=params.days)
+    commits = session.query(Commit).filter(Commit.committed_date >= since).all()
+    session.close()
+
+    data = []
+    for c in commits:
+        data.append({
+            'commit_hash': c.commit_hash,
+            'author': c.author,
+            'author_email': c.author_email,
+            'date': c.committed_date.isoformat(),
+            'message': c.message_summary,
+            'files_changed': c.files_changed,
+            'insertions': c.insertions,
+            'deletions': c.deletions,
+            'branch': c.branch,
+        })
+
+    if params.format == 'json':
+        from fastapi.responses import JSONResponse
+        return JSONResponse(content=data)
+    elif params.format == 'csv':
+        import io
+        import csv
+        output = io.StringIO()
+        if data:
+            writer = csv.DictWriter(output, fieldnames=data[0].keys())
+            writer.writeheader()
+            writer.writerows(data)
+        return Response(content=output.getvalue(), media_type="text/csv")
+    elif params.format == 'markdown':
+        output_str = f"# GitFlow Export\n\n**Period:** Last {params.days} days  \n**Total commits:** {len(data)}  \n\n"
+        output_str += "| Date | Author | Message | Files | +/- |\n|------|--------|---------|-------|-----|\n"
+        for c in data:
+            output_str += f"| {c['date'][:10]} | {c['author']} | {c['message'][:50] or ''} | {c['files_changed']} | +{c['insertions']}/-{c['deletions']} |\n"
+        return Response(content=output_str, media_type="text/markdown")
+    return {"status": "success", "count": len(data)}
 
 
 @app.websocket("/ws/live")
