@@ -29,3 +29,16 @@ def get_session(db_path: Path = None) -> SASession:
     engine = _get_cached_engine(str(db_path))
     Session = sessionmaker(bind=engine)
     return Session()
+
+
+def init_migrations():
+    """Initialize database migrations if not already done"""
+    import os
+    import subprocess
+    import sys
+    migration_dir = Path(__file__).parent.parent.parent / 'alembic' / 'versions'
+    if not list(migration_dir.glob('*.py')):
+        # First run - create initial migration
+        subprocess.run([sys.executable, '-m', 'alembic', 'revision', '--autogenerate', '-m', 'initial schema'], cwd=Path(__file__).parent.parent.parent)
+        subprocess.run([sys.executable, '-m', 'alembic', 'upgrade', 'head'], cwd=Path(__file__).parent.parent.parent)
+
