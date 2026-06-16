@@ -4,362 +4,385 @@ Renders a basic but functional dark-mode dashboard that calls the API directly.
 """
 from fastapi.responses import HTMLResponse
 
-DASHBOARD_HTML = """<!DOCTYPE html>
+DASHBOARD_HTML = """
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GitFlow Dashboard</title>
-  <meta name="description" content="GitFlow – Git commit analytics and productivity dashboard" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GitFlow Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
-    :root {
-      --bg:        #0f172a;
-      --surface:   #1e293b;
-      --border:    #334155;
-      --muted:     #64748b;
-      --subtle:    #94a3b8;
-      --text:      #e2e8f0;
-      --accent:    #38bdf8;
-      --green:     #10b981;
-      --red:       #ef4444;
-      --amber:     #f59e0b;
-      --purple:    #a78bfa;
-      --radius:    10px;
-    }
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-tertiary: #334155;
+            --text-primary: #f1f5f9;
+            --text-secondary: #cbd5e1;
+            --text-muted: #94a3b8;
+            --accent-green: #10b981;
+            --accent-blue: #3b82f6;
+            --accent-cyan: #06b6d4;
+            --accent-orange: #f59e0b;
+            --accent-red: #ef4444;
+            --border-color: #334155;
+            --shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
 
-    body {
-      font-family: 'Inter', system-ui, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      min-height: 100vh;
-    }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, #1a1f35 100%);
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
 
-    /* ── Layout ── */
-    .app { display: flex; flex-direction: column; min-height: 100vh; }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 30px;
+        }
 
-    header {
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      padding: 0 2rem;
-      height: 60px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      position: sticky;
-      top: 0;
-      z-index: 10;
-    }
+        /* Header */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid var(--bg-secondary);
+        }
 
-    header .logo {
-      font-size: 1.125rem;
-      font-weight: 700;
-      color: var(--accent);
-      display: flex;
-      align-items: center;
-      gap: .5rem;
-    }
+        h1 {
+            font-size: 32px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 5px;
+        }
 
-    header .controls { display: flex; align-items: center; gap: 1rem; }
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 14px;
+        }
 
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: .35rem;
-      padding: .25rem .75rem;
-      border-radius: 9999px;
-      font-size: .75rem;
-      font-weight: 600;
-    }
+        .header-right {
+            display: flex;
+            gap: 10px;
+        }
 
-    .badge-green  { background: rgba(16,185,129,.15); color: var(--green); }
-    .badge-red    { background: rgba(239,68,68,.15);  color: var(--red);   }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            text-decoration: none;
+        }
 
-    main { flex: 1; padding: 2rem; max-width: 1400px; margin: 0 auto; width: 100%; }
+        .btn-refresh {
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+            color: white;
+        }
 
-    /* ── Stat cards ── */
-    .stat-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-      gap: 1rem;
-      margin-bottom: 2rem;
-    }
+        .btn-refresh:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow);
+        }
 
-    .stat-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 1.25rem 1.5rem;
-      transition: border-color .2s, transform .2s;
-    }
+        .btn-docs {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
 
-    .stat-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+        .btn-docs:hover {
+            background: var(--bg-tertiary);
+            border-color: var(--accent-cyan);
+        }
 
-    .stat-label { font-size: .75rem; color: var(--subtle); text-transform: uppercase; letter-spacing: .05em; margin-bottom: .5rem; }
+        /* Last Updated */
+        .last-updated {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 20px;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
 
-    .stat-value { font-size: 2rem; font-weight: 700; line-height: 1; }
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+        }
 
-    .stat-value.green  { color: var(--green); }
-    .stat-value.accent { color: var(--accent); }
-    .stat-value.amber  { color: var(--amber); }
-    .stat-value.purple { color: var(--purple); }
+        .status-badge.online {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--accent-green);
+        }
 
-    /* ── Panels ── */
-    .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem; }
-    @media (max-width: 900px) { .panels { grid-template-columns: 1fr; } }
+        /* Grid */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
 
-    .panel {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 1.5rem;
-    }
+        .card {
+            background: linear-gradient(135deg, var(--bg-secondary) 0%, rgba(51, 65, 85, 0.5) 100%);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
 
-    .panel-title {
-      font-size: .875rem;
-      font-weight: 600;
-      color: var(--subtle);
-      text-transform: uppercase;
-      letter-spacing: .05em;
-      margin-bottom: 1.25rem;
-    }
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan));
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
 
-    /* ── Table ── */
-    table { width: 100%; border-collapse: collapse; }
-    th { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: .5rem .75rem; text-align: left; border-bottom: 1px solid var(--border); }
-    td { padding: .65rem .75rem; font-size: .875rem; border-bottom: 1px solid rgba(51,65,85,.5); }
-    tr:last-child td { border-bottom: none; }
-    tr:hover td { background: rgba(255,255,255,.02); }
+        .card:hover {
+            border-color: var(--accent-cyan);
+            transform: translateY(-5px);
+            box-shadow: var(--shadow);
+        }
 
-    .text-green  { color: var(--green);  }
-    .text-red    { color: var(--red);    }
-    .text-muted  { color: var(--muted);  }
-    .text-accent { color: var(--accent); }
+        .card:hover::before {
+            opacity: 1;
+        }
 
-    /* ── Mini bar chart ── */
-    .bar-row { display: flex; align-items: center; gap: .75rem; margin-bottom: .5rem; }
-    .bar-label { font-size: .75rem; color: var(--subtle); width: 6rem; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .bar-track { flex: 1; background: var(--bg); border-radius: 3px; height: 6px; }
-    .bar-fill  { height: 6px; border-radius: 3px; background: var(--accent); transition: width .4s; }
-    .bar-count { font-size: .7rem; color: var(--muted); width: 2.5rem; text-align: right; }
+        .card-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
 
-    /* ── Patterns ── */
-    .pattern-item { display: flex; justify-content: space-between; align-items: center; padding: .5rem 0; border-bottom: 1px solid rgba(51,65,85,.4); }
-    .pattern-item:last-child { border-bottom: none; }
-    .pattern-key { font-size: .8rem; color: var(--subtle); }
-    .pattern-val { font-size: .875rem; font-weight: 600; }
+        .card-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--accent-cyan);
+        }
 
-    /* ── Buttons ── */
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: .4rem;
-      padding: .45rem 1rem;
-      border-radius: 6px;
-      font-size: .8rem;
-      font-weight: 500;
-      border: 1px solid var(--border);
-      background: transparent;
-      color: var(--text);
-      cursor: pointer;
-      transition: background .15s, border-color .15s;
-    }
-    .btn:hover { background: var(--surface); border-color: var(--accent); color: var(--accent); }
+        /* Table */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
 
-    /* ── Toast / notices ── */
-    .notice {
-      background: rgba(16,185,129,.1);
-      border: 1px solid rgba(16,185,129,.3);
-      border-radius: var(--radius);
-      padding: .75rem 1.25rem;
-      font-size: .8rem;
-      color: var(--green);
-      margin-bottom: 1.5rem;
-    }
+        thead {
+            background: var(--bg-primary);
+            border-bottom: 2px solid var(--border-color);
+        }
 
-    .notice.warn {
-      background: rgba(245,158,11,.1);
-      border-color: rgba(245,158,11,.3);
-      color: var(--amber);
-    }
+        th {
+            padding: 12px;
+            text-align: left;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: var(--text-muted);
+        }
 
-    /* ── Skeleton loading ── */
-    .skeleton {
-      background: linear-gradient(90deg, var(--surface) 25%, var(--border) 50%, var(--surface) 75%);
-      background-size: 200% 100%;
-      animation: shimmer 1.4s infinite;
-      border-radius: 4px;
-      height: 1.5rem;
-      width: 4rem;
-      display: inline-block;
-    }
+        td {
+            padding: 12px;
+            border-bottom: 1px solid var(--bg-tertiary);
+        }
 
-    @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+        tr:hover {
+            background: var(--bg-tertiary);
+        }
 
-    /* ── Footer ── */
-    footer {
-      padding: 1rem 2rem;
-      text-align: center;
-      font-size: .7rem;
-      color: var(--muted);
-      border-top: 1px solid var(--border);
-    }
-  </style>
+        /* Sections */
+        .section {
+            background: linear-gradient(135deg, var(--bg-secondary) 0%, rgba(51, 65, 85, 0.3) 100%);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 30px;
+            transition: all 0.3s ease;
+        }
+
+        .section:hover {
+            border-color: var(--accent-cyan);
+            box-shadow: var(--shadow);
+        }
+
+        .section-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: var(--text-primary);
+        }
+
+        .repo-path {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .status-tracked {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--accent-green);
+        }
+
+        .lines-added {
+            color: var(--accent-green);
+            font-weight: 600;
+        }
+
+        .lines-deleted {
+            color: var(--accent-red);
+            font-weight: 600;
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+
+        @media (max-width: 768px) {
+            .container { padding: 15px; }
+            h1 { font-size: 24px; }
+            header { flex-direction: column; align-items: flex-start; gap: 15px; }
+            .grid { grid-template-columns: 1fr; }
+        }
+    </style>
 </head>
 <body>
-<div class="app">
+    <div class="container">
+        <header>
+            <div>
+                <h1>❄️ GitFlow Dashboard</h1>
+                <p class="subtitle">Git Analytics & Productivity Insights</p>
+            </div>
+            <div class="header-right">
+                <button class="btn btn-refresh" onclick="location.reload()">🔄 Refresh</button>
+                <a href="/docs" class="btn btn-docs" target="_blank">📚 API Docs</a>
+            </div>
+        </header>
 
-  <header>
-    <div class="logo">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
-      GitFlow Dashboard
+        <div class="last-updated">
+            Last updated: <span id="last-update"></span>
+            <span class="status-badge online">🟢 API Connected</span>
+        </div>
+
+        <div class="grid" id="stats-container">
+            <div class="card">
+                <div class="card-label">Today's Commits</div>
+                <div class="card-value" id="commits-today">-</div>
+            </div>
+            <div class="card">
+                <div class="card-label">Productivity Score</div>
+                <div class="card-value" id="score-today">-</div>
+            </div>
+            <div class="card">
+                <div class="card-label">Lines Added</div>
+                <div class="card-value" id="lines-added" style="color: var(--accent-green);">-</div>
+            </div>
+            <div class="card">
+                <div class="card-label">Lines Deleted</div>
+                <div class="card-value" id="lines-deleted" style="color: var(--accent-red);">-</div>
+            </div>
+            <div class="card">
+                <div class="card-label">This Week</div>
+                <div class="card-value" id="commits-week" style="color: var(--accent-orange);">-</div>
+            </div>
+            <div class="card">
+                <div class="card-label">Files Changed</div>
+                <div class="card-value" id="files-changed" style="color: var(--accent-blue);">-</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2 class="section-title">📦 Tracked Repositories</h2>
+            <table id="repos-table">
+                <thead>
+                    <tr>
+                        <th>Repository</th>
+                        <th>Branch</th>
+                        <th>Remote URL</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="repos-body">
+                    <tr><td colspan="4" style="text-align: center; color: var(--text-muted);">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <footer>
+            <p>GitFlow — Real-time Git Analytics & Productivity Tracking</p>
+        </footer>
     </div>
-    <div class="controls">
-      <span id="api-status" class="badge badge-green">● API connected</span>
-      <button class="btn" onclick="refresh()">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
-        Refresh
-      </button>
-      <a href="/docs" class="btn" target="_blank">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-        API Docs
-      </a>
-    </div>
-  </header>
 
-  <main>
-    <div id="notice-fallback" class="notice warn" style="display:none">
-      ℹ️ Serving HTML fallback dashboard. To get the full React UI run:
-      <code style="background:rgba(0,0,0,.3);padding:2px 6px;border-radius:3px;">cd src/gitflow/dashboard/frontend &amp;&amp; npm install &amp;&amp; npm run build</code>
-    </div>
+    <script>
+        async function loadDashboard() {
+            try {
+                const response = await fetch('/api/dashboard');
+                const data = await response.json();
 
-    <!-- Stat cards -->
-    <div class="stat-grid" id="stat-grid">
-      <div class="stat-card"><div class="stat-label">Today's Commits</div><div class="stat-value green" id="stat-commits-today"><span class="skeleton"></span></div></div>
-      <div class="stat-card"><div class="stat-label">Productivity Score</div><div class="stat-value accent" id="stat-score"><span class="skeleton"></span></div></div>
-      <div class="stat-card"><div class="stat-label">Lines Added Today</div><div class="stat-value green" id="stat-lines-added"><span class="skeleton"></span></div></div>
-      <div class="stat-card"><div class="stat-label">Lines Deleted Today</div><div class="stat-value" id="stat-lines-deleted" style="color:var(--red)"><span class="skeleton"></span></div></div>
-      <div class="stat-card"><div class="stat-label">This Week Commits</div><div class="stat-value purple" id="stat-week-commits"><span class="skeleton"></span></div></div>
-      <div class="stat-card"><div class="stat-label">Files Changed Today</div><div class="stat-value amber" id="stat-files-changed"><span class="skeleton"></span></div></div>
-    </div>
+                document.getElementById('commits-today').textContent = data.today?.commit_count || 0;
+                document.getElementById('score-today').textContent = Math.round(data.productivity_score || 0);
+                document.getElementById('lines-added').textContent = '+' + (data.today?.lines_added || 0);
+                document.getElementById('lines-deleted').textContent = '-' + (data.today?.lines_deleted || 0);
+                document.getElementById('commits-week').textContent = data.this_week?.total_commits || 0;
+                document.getElementById('files-changed').textContent = data.today?.files_touched || 0;
+                document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
 
-    <!-- Middle panels -->
-    <div class="panels">
-      <!-- Repos breakdown -->
-      <div class="panel">
-        <div class="panel-title">Repository Breakdown (30 days)</div>
-        <div id="repos-bars"><div style="color:var(--muted);font-size:.8rem">Loading…</div></div>
-      </div>
+                const tbody = document.getElementById('repos-body');
+                tbody.innerHTML = '';
 
-      <!-- Patterns -->
-      <div class="panel">
-        <div class="panel-title">Commit Patterns</div>
-        <div id="patterns-panel"><div style="color:var(--muted);font-size:.8rem">Loading…</div></div>
-      </div>
-    </div>
+                if (data.repositories && data.repositories.length > 0) {
+                    data.repositories.forEach(repo => {
+                        const row = tbody.insertRow();
+                        row.innerHTML = `
+                            <td><strong>${repo.repository}</strong></td>
+                            <td>${repo.branch || '-'}</td>
+                            <td><small>${repo.remote_url || '-'}</small></td>
+                            <td><span class="status-tracked">tracked</span></td>
+                        `;
+                    });
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted);">No data yet. Run: gitflow scan</td></tr>';
+                }
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
 
-    <!-- Full repos table -->
-    <div class="panel">
-      <div class="panel-title">Tracked Repositories</div>
-      <table>
-        <thead><tr><th>Repository</th><th>Commits</th><th>Lines Added</th><th>Lines Deleted</th></tr></thead>
-        <tbody id="repos-tbody"><tr><td colspan="4" class="text-muted">Loading…</td></tr></tbody>
-      </table>
-    </div>
-  </main>
-
-  <footer>GitFlow · Fallback Dashboard · <a href="/docs" style="color:var(--accent)">API Docs ↗</a> · Auto-refreshes every 60 s</footer>
-</div>
-
-<script>
-  let maxRepoCommits = 1;
-
-  async function refresh() {
-    try {
-      const [dashRes, reposRes] = await Promise.all([
-        fetch('/api/dashboard'),
-        fetch('/api/repos'),
-      ]);
-
-      if (!dashRes.ok) throw new Error(`/api/dashboard returned ${dashRes.status}`);
-      const d   = await dashRes.json();
-      const repos = reposRes.ok ? await reposRes.json() : [];
-
-      document.getElementById('api-status').className = 'badge badge-green';
-      document.getElementById('api-status').textContent = '● API connected';
-
-      // Stat cards
-      setText('stat-commits-today', d.today?.commit_count ?? 0);
-      setText('stat-score',         Math.round(d.productivity_score ?? 0) + ' / 100');
-      setText('stat-lines-added',   '+' + (d.today?.lines_added ?? 0));
-      setText('stat-lines-deleted', '-' + (d.today?.lines_deleted ?? 0));
-      setText('stat-week-commits',  d.this_week?.total_commits ?? 0);
-      setText('stat-files-changed', d.today?.files_changed ?? 0);
-
-      // Repository bar chart
-      const repoBars = document.getElementById('repos-bars');
-      const repData  = d.repositories ?? [];
-      if (repData.length === 0) {
-        repoBars.innerHTML = '<div style="color:var(--muted);font-size:.8rem">No repository data. Run <code>gitflow scan</code>.</div>';
-      } else {
-        maxRepoCommits = Math.max(...repData.map(r => r.commits), 1);
-        repoBars.innerHTML = repData.map(r => `
-          <div class="bar-row">
-            <span class="bar-label" title="${r.repository}">${r.repository}</span>
-            <div class="bar-track"><div class="bar-fill" style="width:${Math.round(r.commits/maxRepoCommits*100)}%"></div></div>
-            <span class="bar-count">${r.commits}</span>
-          </div>`).join('');
-      }
-
-      // Patterns panel
-      const pat = d.patterns ?? {};
-      const patEl = document.getElementById('patterns-panel');
-      const items = [];
-      if (pat.peak_hour != null) items.push(['Peak Commit Hour', pat.peak_hour + ':00 UTC']);
-      if (pat.best_day)         items.push(['Most Active Day',   pat.best_day]);
-      if (pat.hot_files?.length) items.push(['Hottest File',     pat.hot_files[0]?.path ?? '—']);
-      if (items.length === 0)   items.push(['Status', 'Not enough data yet']);
-      patEl.innerHTML = items.map(([k,v]) => `
-        <div class="pattern-item">
-          <span class="pattern-key">${k}</span>
-          <span class="pattern-val text-accent">${v}</span>
-        </div>`).join('');
-
-      // Full repos table
-      const tbody = document.getElementById('repos-tbody');
-      if (repos.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" class="text-muted">No repositories tracked. Run <code>gitflow add &lt;path&gt;</code>.</td></tr>';
-      } else {
-        tbody.innerHTML = repos.map(r => `
-          <tr>
-            <td><strong>${r.name}</strong><br/><span class="text-muted" style="font-size:.7rem">${r.path}</span></td>
-            <td>${r.branch ?? '—'}</td>
-            <td>${r.remote_url ?? '—'}</td>
-            <td><span class="badge badge-green">tracked</span></td>
-          </tr>`).join('');
-      }
-
-    } catch (err) {
-      document.getElementById('api-status').className = 'badge badge-red';
-      document.getElementById('api-status').textContent = '● API error';
-      console.error('Dashboard fetch error:', err);
-    }
-  }
-
-  function setText(id, val) {
-    document.getElementById(id).textContent = val;
-  }
-
-  // Show fallback notice
-  document.getElementById('notice-fallback').style.display = 'block';
-
-  // Initial load + interval
-  refresh();
-  setInterval(refresh, 60000);
-</script>
+        loadDashboard();
+        setInterval(loadDashboard, 60000);
+    </script>
 </body>
 </html>
 """
