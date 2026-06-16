@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket, Query, Depends, HTTPException
+from fastapi import FastAPI, Request, WebSocket, Query, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from datetime import datetime, timedelta, date
@@ -6,7 +6,12 @@ import asyncio
 import logging
 import time
 
-from src.gitflow.dashboard.api.auth import verify_token
+from gitflow.dashboard.api.auth import verify_token
+from gitflow.dashboard.api.limiter import limiter, rate_limit_exceeded_handler
+from gitflow.dashboard.api.schemas import FilterParams, SearchParams
+from gitflow.dashboard.api.health import HealthChecker
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.middleware import SlowAPIMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +27,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.state.limiter = limiter
+app.add_exception_handler(429, rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
 
 async def optional_auth(credentials: HTTPAuthorizationCredentials = Depends(security)):
     if credentials is not None:
@@ -32,10 +41,51 @@ async def optional_auth(credentials: HTTPAuthorizationCredentials = Depends(secu
     return True
 
 
+@app.get("/health")
+@limiter.limit("100/minute")
+async def health_check(request: Request):
+    from gitflow.db import get_session
+
+    session = get_session()
+    checker = HealthChecker(session)
+    result = checker.full_health_check()
+    session.close()
+
+    status_code = 200 if result['healthy'] else 503
+    from fastapi.responses import JSONResponse
+    return JSONResponse(content=result, status_code=status_code)
+
+
+@app.get("/health/live")
+@limiter.limit("100/minute")
+async def liveness_probe(request: Request):
+    return {'status': 'alive'}
+
+
+@app.get("/health/ready")
+@limiter.limit("100/minute")
+async def readiness_probe(request: Request):
+    from gitflow.db import get_session
+
+    session = get_session()
+    checker = HealthChecker(session)
+    db_check = checker.check_db_connection()
+    session.close()
+
+    if db_check['passed']:
+        return {'status': 'ready', 'database': 'connected'}
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        content={'status': 'not ready', 'database': db_check['detail']},
+        status_code=503
+    )
+
+
 @app.get("/api/dashboard")
-def get_dashboard(auth=Depends(optional_auth)):
-    from src.gitflow.db import get_session
-    from src.gitflow.analytics.analytics_engine import AnalyticsEngine
+@limiter.limit("10/minute")
+def get_dashboard(request, auth=Depends(optional_auth)):
+    from gitflow.db import get_session
+    from gitflow.analytics.analytics_engine import AnalyticsEngine
 
     session = get_session()
     analytics = AnalyticsEngine(session)
@@ -61,9 +111,10 @@ def get_dashboard(auth=Depends(optional_auth)):
 
 
 @app.get("/api/history/{days}")
-def get_history(days: int = 30, auth=Depends(optional_auth)):
-    from src.gitflow.db import get_session
-    from src.gitflow.models import DailyStat
+@limiter.limit("10/minute")
+def get_history(request, days: int = 30, auth=Depends(optional_auth)):
+    from gitflow.db import get_session
+    from gitflow.models import DailyStat
 
     session = get_session()
 
@@ -88,9 +139,10 @@ def get_history(days: int = 30, auth=Depends(optional_auth)):
 
 
 @app.get("/api/repos")
-def get_repos(auth=Depends(optional_auth)):
-    from src.gitflow.db import get_session
-    from src.gitflow.models import Repository
+@limiter.limit("20/minute")
+def get_repos(request, auth=Depends(optional_auth)):
+    from gitflow.db import get_session
+    from gitflow.models import Repository
 
     session = get_session()
     repos = session.query(Repository).filter_by(tracked=True).all()
@@ -109,10 +161,11 @@ def get_repos(auth=Depends(optional_auth)):
 
 
 @app.get("/api/streaks")
-def get_streaks(auth=Depends(optional_auth)):
-    from src.gitflow.db import get_session
-    from src.gitflow.models import Commit
-    from src.gitflow.analytics.analytics_engine import AnalyticsEngine
+@limiter.limit("10/minute")
+def get_streaks(request, auth=Depends(optional_auth)):
+    from gitflow.db import get_session
+    from gitflow.models import Commit
+    from gitflow.analytics.analytics_engine import AnalyticsEngine
 
     session = get_session()
     analytics = AnalyticsEngine(session)
@@ -134,24 +187,20 @@ def get_streaks(auth=Depends(optional_auth)):
 
 
 @app.get("/api/search")
-def search(
-    q: str = Query('', description='Search query'),
-    category: str = Query('commits', description='Search category: commits, files, authors'),
-    limit: int = Query(20, description='Max results'),
-    auth=Depends(optional_auth)
-):
-    from src.gitflow.db import get_session
-    from src.gitflow.models import Commit, CommitFile
+@limiter.limit("30/minute")
+def search(request, params: SearchParams = Depends(), auth=Depends(optional_auth)):
+    from gitflow.db import get_session
+    from gitflow.models import Commit, CommitFile
 
     session = get_session()
     start_time = time.time()
 
     results = []
 
-    if category == 'commits':
+    if params.category == 'commits':
         query = session.query(Commit).filter(
-            Commit.message_summary.ilike(f'%{q}%')
-        ).order_by(Commit.committed_date.desc()).limit(limit).all()
+            Commit.message_summary.ilike(f'%{params.q}%')
+        ).order_by(Commit.committed_date.desc()).limit(params.limit).all()
 
         results = [
             {
@@ -165,10 +214,10 @@ def search(
             for c in query
         ]
 
-    elif category == 'files':
+    elif params.category == 'files':
         query = session.query(CommitFile).filter(
-            CommitFile.file_path.ilike(f'%{q}%')
-        ).limit(limit).all()
+            CommitFile.file_path.ilike(f'%{params.q}%')
+        ).limit(params.limit).all()
 
         file_set = {}
         for f in query:
@@ -178,13 +227,13 @@ def search(
 
         results = [
             {'type': 'file', 'path': path, 'changes': count}
-            for path, count in sorted(file_set.items(), key=lambda x: x[1], reverse=True)[:limit]
+            for path, count in sorted(file_set.items(), key=lambda x: x[1], reverse=True)[:params.limit]
         ]
 
-    elif category == 'authors':
+    elif params.category == 'authors':
         query = session.query(Commit.author, Commit.author_email).filter(
-            Commit.author.ilike(f'%{q}%')
-        ).distinct().limit(limit).all()
+            Commit.author.ilike(f'%{params.q}%')
+        ).distinct().limit(params.limit).all()
 
         results = [
             {'type': 'author', 'name': a[0], 'email': a[1]}
@@ -193,46 +242,39 @@ def search(
 
     elapsed = time.time() - start_time
     if elapsed > 0.1:
-        logger.warning(f"Slow search query ({elapsed:.2f}s): q={q}, category={category}")
+        logger.warning(f"Slow search query ({elapsed:.2f}s): q={params.q}, category={params.category}")
 
     session.close()
 
-    return {'results': results, 'count': len(results), 'query': q, 'category': category}
+    return {'results': results, 'count': len(results), 'query': params.q, 'category': params.category}
 
 
 @app.get("/api/filter")
-def filter_commits(
-    author: str = Query(None, description='Filter by author'),
-    repo: str = Query(None, description='Filter by repository name'),
-    days: int = Query(30, description='Days of history'),
-    language: str = Query(None, description='Filter by file language extension'),
-    page: int = Query(1, description='Page number'),
-    per_page: int = Query(50, description='Results per page'),
-    auth=Depends(optional_auth)
-):
-    from src.gitflow.db import get_session
-    from src.gitflow.models import Commit, Repository, CommitFile
+@limiter.limit("30/minute")
+def filter_commits(request, params: FilterParams = Depends(), auth=Depends(optional_auth)):
+    from gitflow.db import get_session
+    from gitflow.models import Commit, Repository, CommitFile
 
     session = get_session()
 
-    since = datetime.now() - timedelta(days=days)
+    since = datetime.now() - timedelta(days=params.days)
     query = session.query(Commit).join(Repository)
 
     query = query.filter(Commit.committed_date >= since)
 
-    if author:
-        query = query.filter(Commit.author.ilike(f'%{author}%'))
-    if repo:
-        query = query.filter(Repository.name.ilike(f'%{repo}%'))
-    if language:
+    if params.author:
+        query = query.filter(Commit.author.ilike(f'%{params.author}%'))
+    if params.repo:
+        query = query.filter(Repository.name.ilike(f'%{params.repo}%'))
+    if params.language:
         subquery = session.query(CommitFile.commit_id).filter(
-            CommitFile.file_path.ilike(f'%.{language}')
+            CommitFile.file_path.ilike(f'%.{params.language}')
         ).subquery()
         query = query.filter(Commit.id.in_(subquery))
 
     total = query.count()
     query = query.order_by(Commit.committed_date.desc())
-    query = query.offset((page - 1) * per_page).limit(per_page)
+    query = query.offset((params.page - 1) * params.per_page).limit(params.per_page)
 
     commits = query.all()
 
@@ -240,8 +282,8 @@ def filter_commits(
 
     return {
         'total': total,
-        'page': page,
-        'per_page': per_page,
+        'page': params.page,
+        'per_page': params.per_page,
         'results': [
             {
                 'hash': c.commit_hash[:8],
@@ -260,9 +302,10 @@ def filter_commits(
 
 
 @app.get("/api/authors")
-def get_authors(auth=Depends(optional_auth)):
-    from src.gitflow.db import get_session
-    from src.gitflow.models import Commit
+@limiter.limit("20/minute")
+def get_authors(request, auth=Depends(optional_auth)):
+    from gitflow.db import get_session
+    from gitflow.models import Commit
     from sqlalchemy import func
 
     session = get_session()
@@ -285,12 +328,11 @@ def get_authors(auth=Depends(optional_auth)):
 
 
 @app.get("/api/hot-files")
-def get_hot_files(
-    days: int = Query(30, description='Days of history'),
-    auth=Depends(optional_auth)
-):
-    from src.gitflow.db import get_session
-    from src.gitflow.models import Commit, CommitFile
+@limiter.limit("20/minute")
+def get_hot_files(request, days: int = Query(30, description='Days of history'), auth=Depends(optional_auth)):
+    from gitflow.db import get_session
+    from gitflow.models import Commit, CommitFile
+    from sqlalchemy import func
 
     session = get_session()
 
@@ -315,12 +357,10 @@ def get_hot_files(
 
 
 @app.get("/api/commit-by-language")
-def get_commits_by_language(
-    days: int = Query(30, description='Days of history'),
-    auth=Depends(optional_auth)
-):
-    from src.gitflow.db import get_session
-    from src.gitflow.models import Commit, CommitFile
+@limiter.limit("20/minute")
+def get_commits_by_language(request, days: int = Query(30, description='Days of history'), auth=Depends(optional_auth)):
+    from gitflow.db import get_session
+    from gitflow.models import Commit, CommitFile
     from sqlalchemy import func
 
     session = get_session()
@@ -351,18 +391,13 @@ def get_commits_by_language(
     ]
 
 
-@app.get("/api/health")
-def health():
-    return {'status': 'ok', 'timestamp': datetime.now().isoformat()}
-
-
 @app.websocket("/ws/live")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
 
     while True:
-        from src.gitflow.db import get_session
-        from src.gitflow.analytics.analytics_engine import AnalyticsEngine
+        from gitflow.db import get_session
+        from gitflow.analytics.analytics_engine import AnalyticsEngine
 
         session = get_session()
         analytics = AnalyticsEngine(session)
