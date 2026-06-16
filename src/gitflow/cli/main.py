@@ -2,6 +2,7 @@ import click
 from pathlib import Path
 from datetime import datetime, timedelta
 from src.gitflow.cli.commands.report import report
+from src.gitflow.cli.commands.setup import setup
 from src.gitflow.scraper.git_scraper import GitScraper
 from src.gitflow.db import get_session
 from src.gitflow.config import Config
@@ -25,6 +26,7 @@ def cli(ctx, config_path):
 
 
 cli.add_command(report)
+cli.add_command(setup)
 
 
 @cli.command()
