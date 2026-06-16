@@ -20,7 +20,7 @@ class HealthChecker:
 
     def check_last_scrape(self) -> Dict[str, Any]:
         try:
-            from src.gitflow.models import ServiceStatus
+            from gitflow.models import ServiceStatus
 
             latest = self.db.query(ServiceStatus).order_by(
                 ServiceStatus.created_at.desc()

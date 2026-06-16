@@ -1,12 +1,12 @@
 import pytest
 from datetime import datetime, timedelta, date
-from src.gitflow.analytics.analytics_engine import AnalyticsEngine
+from gitflow.analytics.analytics_engine import AnalyticsEngine
 
 
 class TestAnalyticsEngine:
 
     def _get_seeded_date(self, seeded_db_session):
-        from src.gitflow.models import Commit
+        from gitflow.models import Commit
         first = seeded_db_session.query(Commit).first()
         return first.committed_date.date()
 
@@ -121,7 +121,7 @@ class TestAnalyticsEngine:
 
     def test_calculate_time_spread(self, seeded_db_session):
         analytics = AnalyticsEngine(seeded_db_session)
-        from src.gitflow.models import Commit
+        from gitflow.models import Commit
         commits = seeded_db_session.query(Commit).all()
         spread = analytics._calculate_time_spread(commits)
         assert 0 <= spread <= 100

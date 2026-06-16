@@ -35,7 +35,7 @@ class GitScraper:
         except Exception as e:
             logger.warning(f"Could not fetch from remote for {repo_path}: {e}")
 
-        from src.gitflow.models import Repository
+        from gitflow.models import Repository
 
         existing = self.db.query(Repository).filter_by(path=str(repo_path)).first()
         if existing:
@@ -65,7 +65,7 @@ class GitScraper:
         return True
 
     def scan_commits_since(self, repo_path: Path, since: datetime, max_commits: int = 10000) -> int:
-        from src.gitflow.models import Repository, Commit, CommitFile
+        from gitflow.models import Repository, Commit, CommitFile
 
         try:
             repo = Repo(repo_path)
@@ -149,7 +149,7 @@ class GitScraper:
         return commits_added
 
     def _parse_commit(self, commit_obj: git.Commit, repository, branch: str):
-        from src.gitflow.models import Commit
+        from gitflow.models import Commit
 
         try:
             stats = commit_obj.stats.total
@@ -189,7 +189,7 @@ class GitScraper:
         return commit
 
     def _parse_files(self, commit_obj: git.Commit, commit) -> List:
-        from src.gitflow.models import CommitFile
+        from gitflow.models import CommitFile
 
         files = []
 
@@ -239,7 +239,7 @@ class GitScraper:
             return False
 
     def get_tracked_repos(self) -> List[Path]:
-        from src.gitflow.models import Repository
+        from gitflow.models import Repository
         try:
             repos = self.db.query(Repository).filter_by(tracked=True).all()
             return [Path(r.path) for r in repos if Path(r.path).exists()]

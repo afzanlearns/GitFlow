@@ -147,3 +147,14 @@ class CommitAnnotation(Base):
     score = Column(Float, nullable=True)
 
     commit = relationship('Commit', back_populates='annotations')
+
+
+class ServiceStatus(Base):
+    __tablename__ = 'service_status'
+
+    id = Column(Integer, primary_key=True)
+    last_scrape = Column(DateTime, nullable=True)
+    last_scrape_status = Column(String, nullable=True)
+    commits_added = Column(Integer, default=0)
+    error_message = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)

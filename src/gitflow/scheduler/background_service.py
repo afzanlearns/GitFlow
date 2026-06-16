@@ -2,11 +2,12 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from pathlib import Path
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 
 from gitflow.config import Config
 from gitflow.models import ServiceStatus
 from gitflow.notifications.notifier import NotificationService
+from gitflow.db import get_session
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +65,6 @@ class BackgroundService:
             return 0, 1
 
     def _scrape_all_repos(self):
-        from gitflow.db import get_session
         from gitflow.scraper.git_scraper import GitScraper
 
         session = get_session()
@@ -95,7 +95,6 @@ class BackgroundService:
             session.close()
 
     def _calculate_daily_stats(self):
-        from gitflow.db import get_session
         from gitflow.analytics.analytics_engine import AnalyticsEngine
 
         session = get_session()
@@ -108,10 +107,7 @@ class BackgroundService:
 
     def _send_daily_digest(self):
         """Send daily digest notification"""
-        from src.gitflow.analytics.analytics_engine import AnalyticsEngine
-        from src.gitflow.notifications.notifier import NotificationService
-        from src.gitflow.db import get_session
-        from datetime import date
+        from gitflow.analytics.analytics_engine import AnalyticsEngine
 
         session = get_session()
         try:
@@ -126,7 +122,6 @@ class BackgroundService:
             NotificationService.send_daily_digest(stats, score, repos)
 
             # Log to ServiceStatus
-            from src.gitflow.models import ServiceStatus
             status = ServiceStatus(
                 last_scrape=datetime.now(),
                 last_scrape_status='success',

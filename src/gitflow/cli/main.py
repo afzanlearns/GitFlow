@@ -3,11 +3,13 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from functools import wraps
 from git.exc import InvalidGitRepositoryError
-from src.gitflow.cli.commands.report import report
-from src.gitflow.cli.commands.setup import setup
-from src.gitflow.scraper.git_scraper import GitScraper
-from src.gitflow.db import get_session
-from src.gitflow.config import Config
+from gitflow.cli.commands.report import report
+from gitflow.cli.commands.setup import setup
+from gitflow.cli.commands.migration import migration
+from gitflow.cli.commands.status import status
+from gitflow.scraper.git_scraper import GitScraper
+from gitflow.db import get_session
+from gitflow.config import Config
 from rich.console import Console
 
 console = Console()
@@ -50,6 +52,8 @@ def cli(ctx, config_path):
 
 cli.add_command(report)
 cli.add_command(setup)
+cli.add_command(migration)
+cli.add_command(status)
 
 
 @cli.command()
@@ -73,7 +77,7 @@ def add(repo_path: str):
 @handle_errors
 def scan(since: str):
     """Scan repositories for new commits"""
-    from src.gitflow.models import Repository
+    from gitflow.models import Repository
 
     session = get_session()
     scraper = GitScraper(session)
@@ -118,7 +122,7 @@ def scan(since: str):
 @handle_errors
 def history(days: int):
     """Show commit history"""
-    from src.gitflow.models import Commit
+    from gitflow.models import Commit
     from rich.table import Table
 
     session = get_session()
@@ -155,7 +159,7 @@ def history(days: int):
 @handle_errors
 def init_service():
     """Initialize and start background service"""
-    from src.gitflow.scheduler.background_service import BackgroundService
+    from gitflow.scheduler.background_service import BackgroundService
 
     service = BackgroundService()
     service.start()
@@ -189,7 +193,7 @@ def export(fmt: str, output: str, days: int):
     """Export commit data"""
     import csv
     import json
-    from src.gitflow.models import Commit
+    from gitflow.models import Commit
 
     session = get_session()
     since = datetime.now() - timedelta(days=days)
@@ -248,7 +252,7 @@ def export(fmt: str, output: str, days: int):
 @handle_errors
 def repos():
     """List tracked repositories"""
-    from src.gitflow.models import Repository
+    from gitflow.models import Repository
     from rich.table import Table
 
     session = get_session()
@@ -353,7 +357,7 @@ def token():
 @handle_errors
 def generate():
     """Generate a new API token"""
-    from src.gitflow.dashboard.api.auth import generate_token
+    from gitflow.dashboard.api.auth import generate_token
     token = generate_token()
     console.print(f"[green]New API token generated:[/green]")
     console.print(f"[bold cyan]{token}[/bold cyan]")
@@ -365,7 +369,7 @@ def generate():
 @handle_errors
 def show():
     """Show current API token"""
-    from src.gitflow.dashboard.api.auth import get_token
+    from gitflow.dashboard.api.auth import get_token
     token = get_token()
     if token:
         console.print(f"[green]Current API token:[/green]")
@@ -378,7 +382,7 @@ def show():
 @handle_errors
 def revoke():
     """Revoke current API token"""
-    from src.gitflow.dashboard.api.auth import revoke_token
+    from gitflow.dashboard.api.auth import revoke_token
     revoke_token()
     console.print("[green]API token revoked[/green]")
 

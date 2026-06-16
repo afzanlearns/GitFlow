@@ -33,12 +33,18 @@ setup(
             'plyer>=2.1.0',
             'requests>=2.31.0',
         ],
+        'production': [
+            'alembic>=1.12.0',
+            'slowapi>=0.1.9',
+        ],
         'all': [
             'fastapi>=0.109.0',
             'uvicorn>=0.27.0',
             'websockets>=12.0',
             'plyer>=2.1.0',
             'requests>=2.31.0',
+            'alembic>=1.12.0',
+            'slowapi>=0.1.9',
         ],
     },
     entry_points={

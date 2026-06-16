@@ -12,6 +12,7 @@ from gitflow.dashboard.api.auth import verify_token
 from gitflow.dashboard.api.limiter import limiter, rate_limit_exceeded_handler
 from gitflow.dashboard.api.schemas import FilterParams, SearchParams, ExportParams
 from gitflow.dashboard.api.health import HealthChecker
+from gitflow.db import get_session
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.middleware import SlowAPIMiddleware
 
@@ -56,8 +57,6 @@ async def optional_auth(credentials: HTTPAuthorizationCredentials = Depends(secu
 @app.get("/health")
 @limiter.limit("100/minute")
 async def health_check(request: Request):
-    from gitflow.db import get_session
-
     session = get_session()
     checker = HealthChecker(session)
     result = checker.full_health_check()
@@ -77,8 +76,6 @@ async def liveness_probe(request: Request):
 @app.get("/health/ready")
 @limiter.limit("100/minute")
 async def readiness_probe(request: Request):
-    from gitflow.db import get_session
-
     session = get_session()
     checker = HealthChecker(session)
     db_check = checker.check_db_connection()
@@ -96,7 +93,6 @@ async def readiness_probe(request: Request):
 @app.get("/api/dashboard")
 @limiter.limit("10/minute")
 async def get_dashboard(request: Request, auth=Depends(optional_auth)):
-    from gitflow.db import get_session
     from gitflow.analytics.analytics_engine import AnalyticsEngine
 
     session = get_session()
@@ -125,7 +121,6 @@ async def get_dashboard(request: Request, auth=Depends(optional_auth)):
 @app.get("/api/history/{days}")
 @limiter.limit("10/minute")
 async def get_history(request: Request, days: int = 30, auth=Depends(optional_auth)):
-    from gitflow.db import get_session
     from gitflow.models import DailyStat
 
     session = get_session()
@@ -153,7 +148,6 @@ async def get_history(request: Request, days: int = 30, auth=Depends(optional_au
 @app.get("/api/repos")
 @limiter.limit("20/minute")
 async def get_repos(request: Request, auth=Depends(optional_auth)):
-    from gitflow.db import get_session
     from gitflow.models import Repository
 
     session = get_session()
@@ -175,7 +169,6 @@ async def get_repos(request: Request, auth=Depends(optional_auth)):
 @app.get("/api/streaks")
 @limiter.limit("10/minute")
 async def get_streaks(request: Request, auth=Depends(optional_auth)):
-    from gitflow.db import get_session
     from gitflow.models import Commit
     from gitflow.analytics.analytics_engine import AnalyticsEngine
 
@@ -201,7 +194,6 @@ async def get_streaks(request: Request, auth=Depends(optional_auth)):
 @app.get("/api/search")
 @limiter.limit("30/minute")
 async def search(request: Request, params: SearchParams = Depends(), auth=Depends(optional_auth)):
-    from gitflow.db import get_session
     from gitflow.models import Commit, CommitFile
 
     session = get_session()
@@ -264,7 +256,6 @@ async def search(request: Request, params: SearchParams = Depends(), auth=Depend
 @app.get("/api/filter")
 @limiter.limit("30/minute")
 async def filter_commits(request: Request, params: FilterParams = Depends(), auth=Depends(optional_auth)):
-    from gitflow.db import get_session
     from gitflow.models import Commit, Repository, CommitFile
 
     session = get_session()
@@ -290,33 +281,35 @@ async def filter_commits(request: Request, params: FilterParams = Depends(), aut
 
     commits = query.all()
 
+    # Build results while session is still open to allow lazy-loading of relationships
+    results = [
+        {
+            'hash': c.commit_hash[:8],
+            'author': c.author,
+            'message': c.message_summary,
+            'date': c.committed_date.isoformat(),
+            'files_changed': c.files_changed,
+            'insertions': c.insertions,
+            'deletions': c.deletions,
+            'repo': c.repository.name if c.repository else '',
+            'branch': c.branch,
+        }
+        for c in commits
+    ]
+
     session.close()
 
     return {
         'total': total,
         'page': params.page,
         'per_page': params.per_page,
-        'results': [
-            {
-                'hash': c.commit_hash[:8],
-                'author': c.author,
-                'message': c.message_summary,
-                'date': c.committed_date.isoformat(),
-                'files_changed': c.files_changed,
-                'insertions': c.insertions,
-                'deletions': c.deletions,
-                'repo': c.repository.name if c.repository else '',
-                'branch': c.branch,
-            }
-            for c in commits
-        ]
+        'results': results,
     }
 
 
 @app.get("/api/authors")
 @limiter.limit("20/minute")
 async def get_authors(request: Request, auth=Depends(optional_auth)):
-    from gitflow.db import get_session
     from gitflow.models import Commit
     from sqlalchemy import func
 
@@ -342,7 +335,6 @@ async def get_authors(request: Request, auth=Depends(optional_auth)):
 @app.get("/api/hot-files")
 @limiter.limit("20/minute")
 async def get_hot_files(request: Request, days: int = Query(30, description='Days of history'), auth=Depends(optional_auth)):
-    from gitflow.db import get_session
     from gitflow.models import Commit, CommitFile
     from sqlalchemy import func
 
@@ -371,7 +363,6 @@ async def get_hot_files(request: Request, days: int = Query(30, description='Day
 @app.get("/api/commit-by-language")
 @limiter.limit("20/minute")
 async def get_commits_by_language(request: Request, days: int = Query(30, description='Days of history'), auth=Depends(optional_auth)):
-    from gitflow.db import get_session
     from gitflow.models import Commit, CommitFile
     from sqlalchemy import func
 
@@ -407,7 +398,6 @@ async def get_commits_by_language(request: Request, days: int = Query(30, descri
 @limiter.limit("5/minute")
 async def export(request: Request, params: ExportParams = Depends(), auth=Depends(optional_auth)):
     """Export commits with validated parameters"""
-    from gitflow.db import get_session
     from gitflow.models import Commit
     from fastapi.responses import Response
 
@@ -456,7 +446,6 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
 
     while True:
-        from gitflow.db import get_session
         from gitflow.analytics.analytics_engine import AnalyticsEngine
 
         session = get_session()

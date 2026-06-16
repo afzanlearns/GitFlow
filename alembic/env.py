@@ -9,10 +9,10 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-from src.gitflow.models import Base
+from gitflow.models import Base
 target_metadata = Base.metadata
 
-from src.gitflow.config import Config
+from gitflow.config import Config
 db_path = Path(Config.get('gitflow.database_path', str(Path.home() / '.gitflow' / 'gitflow.db'))).expanduser()
 config.set_main_option('sqlalchemy.url', f'sqlite:///{db_path}')
 

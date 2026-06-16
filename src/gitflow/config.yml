@@ -28,3 +28,7 @@ scheduler:
 
 ui:
   theme: "dark"
+
+rate_limiting:
+  enabled: true
+  default_limit: "10/minute"

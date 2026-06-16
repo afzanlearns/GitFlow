@@ -42,8 +42,7 @@ def temp_repo_no_commits():
 
 @pytest.fixture
 def db_session():
-    from src.gitflow.db import get_session
-    from src.gitflow.models import Base
+    from gitflow.models import Base
     from sqlalchemy import create_engine
 
     tmp_db = Path(tempfile.mktemp(suffix='.db'))
@@ -67,7 +66,7 @@ def db_session():
 
 @pytest.fixture
 def seeded_db_session(db_session):
-    from src.gitflow.models import Repository, Commit, CommitFile
+    from gitflow.models import Repository, Commit, CommitFile
 
     repo = Repository(
         path='/tmp/test-repo',
@@ -78,6 +77,7 @@ def seeded_db_session(db_session):
     db_session.add(repo)
     db_session.flush()
 
+    # Use 2 days ago so streak and pattern tests remain consistent
     recent_date = datetime.now() - timedelta(days=2)
     recent_date = recent_date.replace(hour=10, minute=0, second=0, microsecond=0)
 

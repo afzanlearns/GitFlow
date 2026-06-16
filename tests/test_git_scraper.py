@@ -1,8 +1,8 @@
 import pytest
 from pathlib import Path
 from datetime import datetime
-from src.gitflow.scraper.git_scraper import GitScraper
-from src.gitflow.models import Commit, Repository
+from gitflow.scraper.git_scraper import GitScraper
+from gitflow.models import Commit, Repository
 
 
 class TestGitScraper:

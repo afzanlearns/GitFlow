@@ -3,8 +3,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session as SASession
 from functools import lru_cache
 
-from src.gitflow.models import Base
-from src.gitflow.config import Config
+from gitflow.models import Base
+from gitflow.config import Config
 
 
 def get_engine(db_path: Path = None):
@@ -41,4 +41,3 @@ def init_migrations():
         # First run - create initial migration
         subprocess.run([sys.executable, '-m', 'alembic', 'revision', '--autogenerate', '-m', 'initial schema'], cwd=Path(__file__).parent.parent.parent)
         subprocess.run([sys.executable, '-m', 'alembic', 'upgrade', 'head'], cwd=Path(__file__).parent.parent.parent)
-

@@ -20,7 +20,12 @@
 - **API Authentication** — Token-based auth for dashboard endpoints
 - **Docker Support** — Containerized deployment with docker-compose
 - **Export Formats** — CSV, JSON, and Markdown export
-- **Comprehensive Testing** — 40+ unit tests with >80% core coverage
+- **Health Checks** — Kubernetes-ready `/health`, `/health/live`, `/health/ready` endpoints
+- **Rate Limiting** — SlowAPI-based per-endpoint rate limiting (10–100 req/min)
+- **Input Validation** — Pydantic-powered query parameter validation with 422 error responses
+- **Database Migrations** — Alembic-backed schema versioning with CLI commands
+- **Notifications** — Real Slack webhook and SMTP email digest delivery
+- **Comprehensive Testing** — 99 unit tests across 11 test files with 85% code coverage
 
 ---
 
@@ -327,6 +332,38 @@ Invalidate the current API token.
 gitflow token revoke
 ```
 
+#### `status`
+
+Check the health of all GitFlow components.
+
+```bash
+gitflow status
+```
+
+Queries the running dashboard API and displays:
+- API server connectivity
+- Database health (SQLite connection)
+- Background scraper status
+- Overall system health verdict
+
+#### `migration`
+
+Manage Alembic database schema migrations.
+
+```bash
+# Auto-generate a new migration from model changes
+gitflow migration create "add new column"
+
+# Apply all pending migrations
+gitflow migration upgrade
+
+# Roll back one version
+gitflow migration downgrade
+
+# View migration history
+gitflow migration history
+```
+
 ---
 
 ## Web Dashboard
@@ -337,21 +374,49 @@ The dashboard API provides REST endpoints and a WebSocket for real-time updates.
 
 **API Endpoints:**
 
-| Endpoint | Description |
-|----------|-------------|
-| `GET /api/dashboard` | Overview with today's stats, weekly report, score, repos, patterns |
-| `GET /api/history/{days}` | Historical daily stats for charting |
-| `GET /api/repos` | List tracked repositories |
-| `GET /api/streaks` | Commit streaks per author |
-| `GET /api/search?q=&category=` | Search commits, files, or authors |
-| `GET /api/filter?author=&repo=&days=&language=` | Multi-dimensional filtering with pagination |
-| `GET /api/authors` | List all authors with commit counts |
-| `GET /api/hot-files?days=` | Most-changed files in last N days |
-| `GET /api/commit-by-language?days=` | Commits broken down by file language |
-| `GET /api/health` | Health check |
-| `WS /ws/live` | Real-time updates every 30 seconds |
+| Endpoint | Rate Limit | Description |
+|----------|-----------|-------------|
+| `GET /api/dashboard` | 10/min | Overview with today's stats, weekly report, score, repos, patterns |
+| `GET /api/history/{days}` | 30/min | Historical daily stats for charting |
+| `GET /api/repos` | 30/min | List tracked repositories |
+| `GET /api/streaks` | 30/min | Commit streaks per author |
+| `GET /api/search?q=&category=` | 30/min | Search commits, files, or authors |
+| `GET /api/filter?author=&repo=&days=&language=&page=&page_size=` | 30/min | Filtered commits with pagination |
+| `GET /api/authors` | 30/min | List all authors with commit counts |
+| `GET /api/hot-files?days=` | 30/min | Most-changed files in last N days |
+| `GET /api/commit-by-language?days=` | 30/min | Commits broken down by file language |
+| `GET /api/export?format=&days=` | 10/min | Export commits as JSON or CSV |
+| `GET /health` | 100/min | Full health status |
+| `GET /health/live` | 100/min | Kubernetes liveness probe |
+| `GET /health/ready` | 100/min | Kubernetes readiness probe |
+| `WS /ws/live` | — | Real-time updates every 30 seconds |
 
 All endpoints support optional Bearer token authentication via `Authorization: Bearer <token>` header.
+
+**Input Validation:**
+
+Endpoints validate query parameters using Pydantic. Invalid inputs return `422 Unprocessable Entity` with field-level error details:
+
+```json
+{
+  "detail": [
+    {"loc": ["query", "days"], "msg": "value is not a valid integer", "type": "type_error.integer"}
+  ]
+}
+```
+
+**Health Endpoints:**
+
+```bash
+# Full health check
+curl http://localhost:8000/health
+
+# Liveness probe (is the process alive?)
+curl http://localhost:8000/health/live
+
+# Readiness probe (can it serve traffic?)
+curl http://localhost:8000/health/ready
+```
 
 ```bash
 # Start the dashboard API
@@ -446,9 +511,11 @@ gitflow:
 
 notifications:
   enabled: true
-  slack_webhook: null
+  slack_webhook: null         # https://hooks.slack.com/services/...
   email_enabled: false
-  email_address: null
+  email_address: null         # sender@gmail.com
+  email_password: null        # Gmail App Password
+  email_recipient: null       # recipient@example.com
 
 analytics:
   productivity_threshold: 80
@@ -491,6 +558,8 @@ gitflow report daily
 |----------|---------|-------------|
 | `GITFLOW_CONFIG` | `~/.gitflow/config.yml` | Path to config file |
 | `GITFLOW_DB_PATH` | `~/.gitflow/gitflow.db` | Database file location |
+| `GITFLOW_API_TOKEN` | — | API token (overrides stored token) |
+| `GITFLOW_SLACK_WEBHOOK` | — | Slack webhook URL (overrides config) |
 
 ---
 
@@ -596,14 +665,25 @@ GitFlow/
 │               ├── App.jsx
 │               ├── index.jsx
 │               └── components/Dashboard.jsx
+├── alembic/                       # Alembic migration scripts
+│   ├── env.py
+│   └── versions/
 ├── tests/
 │   ├── __init__.py
-│   ├── conftest.py                # Test fixtures
-│   ├── test_git_scraper.py        # Scraper tests (8 tests)
-│   ├── test_analytics_engine.py   # Analytics tests (17 tests)
-│   └── test_cli_commands.py       # CLI tests (15 tests)
+│   ├── conftest.py                # Shared fixtures & DB mocking
+│   ├── test_git_scraper.py        # Git scraper unit tests
+│   ├── test_analytics_engine.py   # Analytics engine unit tests
+│   ├── test_cli_commands.py       # CLI command integration tests
+│   ├── test_api_hardening.py      # FastAPI endpoint & rate limit tests
+│   ├── test_auth.py               # Token auth tests
+│   ├── test_background_service.py # Scheduler & background job tests
+│   ├── test_config.py             # Config loading & mutation tests
+│   ├── test_health_and_status.py  # Health check endpoint tests
+│   ├── test_migration.py          # Alembic migration command tests
+│   └── test_notifications.py      # Slack/SMTP notifier tests
 ├── Dockerfile
 ├── docker-compose.yml
+├── alembic.ini
 ├── .dockerignore
 ├── setup.py
 ├── pyproject.toml
@@ -632,19 +712,30 @@ gitflow --help
 # Run all tests with coverage
 python -m pytest
 
-# With coverage report
-python -m pytest --cov=src.gitflow --cov-report=html
+# With verbose output and HTML coverage report
+python -m pytest tests/ -v --cov=src.gitflow --cov-report=html
 
-# Run specific test file
-python -m pytest tests/test_analytics_engine.py -v
+# Run a specific test file
+python -m pytest tests/test_api_hardening.py -v
+
+# Run tests matching a keyword
+python -m pytest -k "rate_limit" -v
 ```
 
-Current test suite: **40 tests** across 3 test files covering:
-- `test_git_scraper.py` — Repository add, deduplication, commit parsing, scanning
-- `test_analytics_engine.py` — Daily/weekly/monthly stats, caching, streaks, patterns, scoring
-- `test_cli_commands.py` — All CLI commands via Click test runner
+Current test suite: **99 tests** across 11 test files with **85% overall coverage**:
 
-Coverage targets: >80% on core modules (analytics engine, models, db, scraper).
+| Test File | Coverage Area |
+|-----------|---------------|
+| `test_git_scraper.py` | Repository add, deduplication, commit parsing |
+| `test_analytics_engine.py` | Daily/weekly/monthly stats, streaks, scoring |
+| `test_cli_commands.py` | All CLI commands via Click test runner |
+| `test_api_hardening.py` | FastAPI endpoints, rate limiting, auth |
+| `test_auth.py` | Token generation, validation, revocation |
+| `test_background_service.py` | APScheduler jobs, digest execution |
+| `test_config.py` | YAML loading, dot-notation access, reset |
+| `test_health_and_status.py` | Health check endpoints, CLI status command |
+| `test_migration.py` | Alembic CLI migration subcommands |
+| `test_notifications.py` | Slack webhook, SMTP email delivery |
 
 ### Building
 
@@ -665,10 +756,14 @@ pip install dist/gitflow-*.whl
 | `Repo` not found error | Ensure the path is a valid Git repository with commits |
 | No commits found | Run `gitflow scan` first, or use `--since` with a broader range |
 | Dashboard won't start | Install extras: `pip install -e ".[dashboard]"` |
-| Notifications not working | Install extras: `pip install -e ".[notifications]"` |
+| Notifications not working | Configure `slack_webhook` or `email_*` fields in `~/.gitflow/config.yml` |
 | Database locked error | Only one process should access the DB at a time |
 | Config file errors | Run `gitflow config-reset` to regenerate with defaults |
 | API returns 401 | Run `gitflow token generate` and use the new token |
+| API returns 429 | You have exceeded the rate limit; wait and retry |
+| API returns 422 | Invalid query parameter — check the error detail field |
+| Health endpoint returns `degraded` | Run `gitflow status` for a detailed component breakdown |
+| Migration errors | Run `gitflow migration history` then `gitflow migration upgrade` |
 | Docker permission denied | Ensure mounted repo paths are readable by the container |
 | Tests failing on Windows | Run `git config core.autocrlf true` before tests |
 

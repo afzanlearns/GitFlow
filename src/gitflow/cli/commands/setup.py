@@ -11,9 +11,9 @@ console = Console()
 @click.pass_context
 def setup(ctx):
     """Run the interactive setup wizard"""
-    from src.gitflow.db import get_session
-    from src.gitflow.scraper.git_scraper import GitScraper
-    from src.gitflow.config import Config
+    from gitflow.db import get_session
+    from gitflow.scraper.git_scraper import GitScraper
+    from gitflow.config import Config
 
     console.print(Panel.fit(
         "[bold cyan]GitFlow Setup Wizard[/bold cyan]\n"
@@ -100,7 +100,7 @@ def setup(ctx):
 
     start_service = Confirm.ask("  Start background scraping service?", default=True)
     if start_service:
-        from src.gitflow.scheduler.background_service import BackgroundService
+        from gitflow.scheduler.background_service import BackgroundService
         service = BackgroundService()
         service.start()
         console.print("[green]  Background service started[/green]")

@@ -13,7 +13,7 @@ class AnalyticsEngine:
 
     def get_daily_stats(self, target_date: date) -> Dict:
         try:
-            from src.gitflow.models import Commit, DailyStat
+            from gitflow.models import Commit, DailyStat
 
             cached = self.db.query(DailyStat).filter_by(date=target_date).first()
             if cached:
@@ -86,7 +86,7 @@ class AnalyticsEngine:
 
     def get_weekly_report(self, week_start: date) -> Dict:
         try:
-            from src.gitflow.models import Commit, WeeklyStat
+            from gitflow.models import Commit, WeeklyStat
 
             week_end = week_start + timedelta(days=6)
 
@@ -151,7 +151,7 @@ class AnalyticsEngine:
 
     def get_productivity_score(self, target_date: date) -> float:
         try:
-            from src.gitflow.models import Commit
+            from gitflow.models import Commit
 
             if target_date > date.today():
                 return 0.0
@@ -186,7 +186,7 @@ class AnalyticsEngine:
 
     def get_current_streak(self, author: str) -> Tuple[int, bool]:
         try:
-            from src.gitflow.models import Commit
+            from gitflow.models import Commit
 
             if not author:
                 return 0, False
@@ -223,7 +223,7 @@ class AnalyticsEngine:
 
     def detect_patterns(self, days: int = 30) -> Dict:
         try:
-            from src.gitflow.models import Commit
+            from gitflow.models import Commit
 
             since = datetime.now() - timedelta(days=days)
             commits = self.db.query(Commit).filter(
@@ -279,7 +279,7 @@ class AnalyticsEngine:
 
     def get_repository_breakdown(self, days: int = 30) -> List[Dict]:
         try:
-            from src.gitflow.models import Repository, Commit
+            from gitflow.models import Repository, Commit
 
             since = datetime.now() - timedelta(days=days)
 
@@ -309,7 +309,7 @@ class AnalyticsEngine:
 
     def get_monthly_report(self, year: int, month: int) -> Dict:
         try:
-            from src.gitflow.models import Commit, MonthlyStat
+            from gitflow.models import Commit, MonthlyStat
 
             cached = self.db.query(MonthlyStat).filter_by(year=year, month=month).first()
             if cached:

@@ -3,8 +3,8 @@ from datetime import datetime, timedelta, date
 from pathlib import Path
 from rich.console import Console
 from rich.table import Table
-from src.gitflow.scraper.git_scraper import GitScraper
-from src.gitflow.analytics.analytics_engine import AnalyticsEngine
+from gitflow.scraper.git_scraper import GitScraper
+from gitflow.analytics.analytics_engine import AnalyticsEngine
 
 console = Console()
 
@@ -19,7 +19,7 @@ def report():
 @click.option('--date', default='today', help='Date (today, yesterday, YYYY-MM-DD)')
 def daily(date: str):
     """Daily commit report"""
-    from src.gitflow.db import get_session
+    from gitflow.db import get_session
 
     session = get_session()
     analytics = AnalyticsEngine(session)
@@ -73,7 +73,7 @@ def daily(date: str):
 @click.option('--weeks', default=4, help='Number of weeks')
 def weekly(weeks: int):
     """Weekly productivity report"""
-    from src.gitflow.db import get_session
+    from gitflow.db import get_session
 
     session = get_session()
     analytics = AnalyticsEngine(session)
@@ -98,8 +98,8 @@ def weekly(weeks: int):
 @click.option('--author', default=None, help='Filter by author')
 def streaks(author: str):
     """Show commit streaks"""
-    from src.gitflow.db import get_session
-    from src.gitflow.models import Commit
+    from gitflow.db import get_session
+    from gitflow.models import Commit
 
     session = get_session()
     analytics = AnalyticsEngine(session)
@@ -133,7 +133,7 @@ def streaks(author: str):
 @click.option('--days', default=30, help='Days to analyze')
 def patterns(days: int):
     """Analyze commit patterns"""
-    from src.gitflow.db import get_session
+    from gitflow.db import get_session
 
     session = get_session()
     analytics = AnalyticsEngine(session)
@@ -161,7 +161,7 @@ def patterns(days: int):
 @click.option('--month', default=None, type=int, help='Month')
 def monthly(year: int, month: int):
     """Monthly report"""
-    from src.gitflow.db import get_session
+    from gitflow.db import get_session
 
     session = get_session()
     analytics = AnalyticsEngine(session)

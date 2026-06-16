@@ -36,6 +36,10 @@ DEFAULT_CONFIG = {
     'ui': {
         'theme': 'dark',
     },
+    'rate_limiting': {
+        'enabled': True,
+        'default_limit': '10/minute',
+    },
 }
 
 
@@ -62,7 +66,8 @@ class Config:
         else:
             path = cls._config_path
 
-        config = DEFAULT_CONFIG.copy()
+        import copy
+        config = copy.deepcopy(DEFAULT_CONFIG)
 
         if path.exists():
             try:
@@ -132,7 +137,8 @@ class Config:
 
     @classmethod
     def reset(cls) -> None:
-        cls._config = DEFAULT_CONFIG.copy()
+        import copy
+        cls._config = copy.deepcopy(DEFAULT_CONFIG)
         cls.save(cls._config)
 
     @staticmethod

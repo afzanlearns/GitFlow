@@ -3,7 +3,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import logging
-from src.gitflow.config import Config
+from gitflow.config import Config
 
 logger = logging.getLogger(__name__)
 
