@@ -4,7 +4,9 @@ from pathlib import Path
 import logging
 from datetime import datetime, timedelta
 
-from src.gitflow.config import Config
+from gitflow.config import Config
+from gitflow.models import ServiceStatus
+from gitflow.notifications.notifier import NotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -62,19 +64,39 @@ class BackgroundService:
             return 0, 1
 
     def _scrape_all_repos(self):
-        from src.gitflow.db import get_session
-        from src.gitflow.scraper.git_scraper import GitScraper
+        from gitflow.db import get_session
+        from gitflow.scraper.git_scraper import GitScraper
 
         session = get_session()
         scraper = GitScraper(session)
 
-        total = scraper.scan_all_repos()
-        logger.info(f"Scraped {total} new commits")
-        session.close()
+        try:
+            total = scraper.scan_all_repos()
+            logger.info(f"Scraped {total} new commits")
+
+            status = ServiceStatus(
+                last_scrape=datetime.now(),
+                last_scrape_status='success',
+                commits_added=total,
+            )
+            session.add(status)
+            session.commit()
+        except Exception as e:
+            logger.error(f"Scrape failed: {e}")
+            status = ServiceStatus(
+                last_scrape=datetime.now(),
+                last_scrape_status='error',
+                commits_added=0,
+                error_message=str(e),
+            )
+            session.add(status)
+            session.commit()
+        finally:
+            session.close()
 
     def _calculate_daily_stats(self):
-        from src.gitflow.db import get_session
-        from src.gitflow.analytics.analytics_engine import AnalyticsEngine
+        from gitflow.db import get_session
+        from gitflow.analytics.analytics_engine import AnalyticsEngine
 
         session = get_session()
         analytics = AnalyticsEngine(session)
@@ -85,43 +107,35 @@ class BackgroundService:
         session.close()
 
     def _send_daily_digest(self):
-        from src.gitflow.db import get_session
+        """Send daily digest notification"""
         from src.gitflow.analytics.analytics_engine import AnalyticsEngine
+        from src.gitflow.notifications.notifier import NotificationService
+        from src.gitflow.db import get_session
+        from datetime import date
 
         session = get_session()
-        analytics = AnalyticsEngine(session)
-
-        notifications_enabled = Config.get('notifications.enabled', True)
-        if not notifications_enabled:
-            logger.info("Notifications disabled, skipping daily digest")
-            session.close()
-            return
-
-        today = datetime.now().date()
-        stats = analytics.get_daily_stats(today)
-        score = analytics.get_productivity_score(today)
-
-        message = f"{stats.get('commit_count', 0)} commits, Score: {score:.0f}/100"
-
         try:
-            from plyer import notification
-            notification.notify(
-                title="GitFlow Daily Digest",
-                message=message,
-                timeout=10
+            analytics = AnalyticsEngine(session)
+
+            today = date.today()
+            stats = analytics.get_daily_stats(today)
+            score = analytics.get_productivity_score(today)
+            repos = analytics.get_repository_breakdown(days=1)
+
+            # Actually send the notification
+            NotificationService.send_daily_digest(stats, score, repos)
+
+            # Log to ServiceStatus
+            from src.gitflow.models import ServiceStatus
+            status = ServiceStatus(
+                last_scrape=datetime.now(),
+                last_scrape_status='success',
+                commits_added=stats.get('commit_count', 0),
+                error_message=None
             )
-        except ImportError:
-            logger.warning("Plyer not installed, skipping system notification")
+            session.add(status)
+            session.commit()
         except Exception as e:
-            logger.error(f"Failed to send notification: {e}")
-
-        slack_webhook = Config.get('notifications.slack_webhook')
-        if slack_webhook:
-            try:
-                import requests
-                requests.post(slack_webhook, json={'text': f'GitFlow Digest: {message}'}, timeout=5)
-            except Exception as e:
-                logger.error(f"Failed to send Slack notification: {e}")
-
-        logger.info(f"Daily digest: {message}")
-        session.close()
+            logger.error(f"Failed to send daily digest: {e}")
+        finally:
+            session.close()

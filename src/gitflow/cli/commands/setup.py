@@ -54,16 +54,31 @@ def setup(ctx):
         session.close()
 
     console.print(f"\n[bold]Step 2: Notification Settings[/bold]")
+    if Confirm.ask("  Configure Slack notifications?"):
+        webhook = Prompt.ask("  Slack webhook URL (optional, press Enter to skip)", default="")
+        if webhook:
+            config['notifications']['slack_webhook'] = webhook
 
-    want_email = Confirm.ask("  Want email digests?", default=False)
-    if want_email:
-        email = Prompt.ask("  Email address")
-        config['notifications']['email_enabled'] = True
-        config['notifications']['email_address'] = email
-
-    slack_webhook = Prompt.ask("  Slack webhook URL (optional, press Enter to skip)", default="")
-    if slack_webhook:
-        config['notifications']['slack_webhook'] = slack_webhook
+    if Confirm.ask("  Configure email notifications?"):
+        if Confirm.ask("  Use Gmail?"):
+            email = Prompt.ask("  Email address")
+            password = Prompt.ask("  Gmail app password (not your main password!)", password=True)
+            config['notifications']['email_enabled'] = True
+            config['notifications']['email_address'] = email
+            config['notifications']['smtp_host'] = "smtp.gmail.com"
+            config['notifications']['smtp_port'] = 587
+            config['notifications']['smtp_username'] = email
+            config['notifications']['smtp_user'] = email
+            config['notifications']['smtp_password'] = password
+        else:
+            email = Prompt.ask("  Email address")
+            config['notifications']['email_enabled'] = True
+            config['notifications']['email_address'] = email
+            config['notifications']['smtp_host'] = Prompt.ask("  SMTP host", default="smtp.gmail.com")
+            config['notifications']['smtp_port'] = int(Prompt.ask("  SMTP port", default="587"))
+            config['notifications']['smtp_username'] = Prompt.ask("  SMTP username", default=email)
+            config['notifications']['smtp_user'] = config['notifications']['smtp_username']
+            config['notifications']['smtp_password'] = Prompt.ask("  SMTP password", password=True)
 
     console.print(f"\n[bold]Step 3: Analytics Settings[/bold]")
 

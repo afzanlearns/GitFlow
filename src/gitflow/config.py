@@ -19,6 +19,11 @@ DEFAULT_CONFIG = {
         'slack_webhook': None,
         'email_enabled': False,
         'email_address': None,
+        'smtp_host': 'smtp.gmail.com',
+        'smtp_port': 587,
+        'smtp_username': None,
+        'smtp_user': None,
+        'smtp_password': None,
     },
     'analytics': {
         'productivity_threshold': 80,

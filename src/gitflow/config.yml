@@ -5,11 +5,18 @@ gitflow:
 
 notifications:
   enabled: true
-  # Slack webhook (optional)
-  # slack_webhook: https://hooks.slack.com/services/YOUR/WEBHOOK/URL
-  # Email (optional)
-  # email_enabled: false
-  # email_address: your@email.com
+  
+  # Slack
+  slack_webhook: null  # e.g., https://hooks.slack.com/services/YOUR/WEBHOOK
+  
+  # Email (Gmail example)
+  email_enabled: false
+  email_address: null
+  smtp_host: smtp.gmail.com
+  smtp_port: 587
+  smtp_username: null  # your@gmail.com
+  smtp_user: null      # your@email.com (legacy key)
+  smtp_password: null  # Use app password for Gmail
 
 analytics:
   productivity_threshold: 80
