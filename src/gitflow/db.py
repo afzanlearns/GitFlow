@@ -2,16 +2,15 @@ from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session as SASession
 from functools import lru_cache
-import os
 
 from src.gitflow.models import Base
-
-DEFAULT_DB_PATH = Path.home() / '.gitflow' / 'gitflow.db'
+from src.gitflow.config import Config
 
 
 def get_engine(db_path: Path = None):
     if db_path is None:
-        db_path = DEFAULT_DB_PATH
+        config_path = Config.get('gitflow.database_path', str(Path.home() / '.gitflow' / 'gitflow.db'))
+        db_path = Path(config_path).expanduser()
     db_path.parent.mkdir(parents=True, exist_ok=True)
     engine = create_engine(f'sqlite:///{db_path}', echo=False)
     Base.metadata.create_all(engine)
@@ -25,7 +24,8 @@ def _get_cached_engine(db_path_str: str):
 
 def get_session(db_path: Path = None) -> SASession:
     if db_path is None:
-        db_path = DEFAULT_DB_PATH
+        config_path = Config.get('gitflow.database_path', str(Path.home() / '.gitflow' / 'gitflow.db'))
+        db_path = Path(config_path).expanduser()
     engine = _get_cached_engine(str(db_path))
     Session = sessionmaker(bind=engine)
     return Session()

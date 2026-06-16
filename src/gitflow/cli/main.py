@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from src.gitflow.cli.commands.report import report
 from src.gitflow.scraper.git_scraper import GitScraper
 from src.gitflow.db import get_session
+from src.gitflow.config import Config
 from rich.console import Console
 
 console = Console()
@@ -11,8 +12,16 @@ console = Console()
 
 @click.group()
 @click.version_option(version='1.0.0')
-def cli():
+@click.option('--config', 'config_path', default=None, help='Path to config file', envvar='GITFLOW_CONFIG')
+@click.pass_context
+def cli(ctx, config_path):
     """GitFlow - Git commit analytics and tracking"""
+    if config_path:
+        Config.load(Path(config_path))
+    else:
+        Config.load()
+    ctx.ensure_object(dict)
+    ctx.obj['config_path'] = config_path
 
 
 cli.add_command(report)
@@ -122,10 +131,14 @@ def init_service():
     service = BackgroundService()
     service.start()
 
+    scrape_interval = Config.get('gitflow.scrape_interval_hours', 1)
+    stats_time = Config.get('scheduler.daily_stats_time', '00:01')
+    digest_time = Config.get('scheduler.daily_digest_time', '08:00')
+
     console.print("[green]Background service started[/green]")
-    console.print("  - Scrapes repos hourly")
-    console.print("  - Calculates daily stats at midnight")
-    console.print("  - Sends daily digest at 8 AM")
+    console.print(f"  - Scrapes repos every {scrape_interval}h")
+    console.print(f"  - Calculates daily stats at {stats_time}")
+    console.print(f"  - Sends daily digest at {digest_time}")
 
 
 @cli.command()
@@ -220,6 +233,69 @@ def repos():
 
     console.print(table)
     session.close()
+
+
+@cli.command()
+def config_show():
+    """Show current configuration"""
+    from rich.table import Table
+
+    config_data = Config._config if Config._config else Config.load()
+
+    table = Table(title="GitFlow Configuration")
+    table.add_column("Key", style="cyan")
+    table.add_column("Value", style="green")
+
+    def flatten_dict(d, prefix=''):
+        for k, v in d.items():
+            key = f"{prefix}.{k}" if prefix else k
+            if isinstance(v, dict):
+                flatten_dict(v, key)
+            else:
+                table.add_row(key, str(v) if v is not None else '[dim]not set[/dim]')
+
+    flatten_dict(config_data)
+    console.print(table)
+
+
+@cli.command()
+@click.argument('key')
+@click.argument('value')
+def config_set(key: str, value: str):
+    """Set a configuration value (e.g. gitflow.scrape_interval_hours 2)"""
+    config_data = Config._config if Config._config else Config.load()
+
+    keys = key.split('.')
+    target = config_data
+    for k in keys[:-1]:
+        if k not in target:
+            target[k] = {}
+        target = target[k]
+
+    try:
+        if value.isdigit():
+            value = int(value)
+        else:
+            try:
+                value = float(value)
+            except ValueError:
+                if value.lower() in ('true', 'false'):
+                    value = value.lower() == 'true'
+                elif value.lower() in ('none', 'null'):
+                    value = None
+    except (ValueError, AttributeError):
+        pass
+
+    target[keys[-1]] = value
+    Config.save(config_data)
+    console.print(f"[green]Set {key} = {value}[/green]")
+
+
+@cli.command()
+def config_reset():
+    """Reset configuration to defaults"""
+    Config.reset()
+    console.print("[green]Configuration reset to defaults[/green]")
 
 
 if __name__ == '__main__':

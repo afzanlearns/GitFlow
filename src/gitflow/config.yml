@@ -1,0 +1,23 @@
+# GitFlow Configuration
+gitflow:
+  scrape_interval_hours: 1
+  database_path: ~/.gitflow/gitflow.db
+
+notifications:
+  enabled: true
+  # Slack webhook (optional)
+  # slack_webhook: https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+  # Email (optional)
+  # email_enabled: false
+  # email_address: your@email.com
+
+analytics:
+  productivity_threshold: 80
+  streak_reset_days: 1
+
+scheduler:
+  daily_stats_time: "00:01"
+  daily_digest_time: "08:00"
+
+ui:
+  theme: "dark"
