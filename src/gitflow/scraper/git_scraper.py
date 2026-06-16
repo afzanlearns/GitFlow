@@ -1,9 +1,10 @@
 from pathlib import Path
 from typing import List, Optional, Dict
 from datetime import datetime, timedelta
+from functools import wraps
 import git
 from git import Repo
-from git.exc import InvalidGitRepositoryError
+from git.exc import InvalidGitRepositoryError, GitCommandError
 import logging
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,8 @@ class GitScraper:
                 repo.remotes.origin.fetch()
         except (IndexError, AttributeError):
             pass
+        except GitCommandError as e:
+            logger.warning(f"Git command error for {repo_path}: {e}")
         except Exception as e:
             logger.warning(f"Could not fetch from remote for {repo_path}: {e}")
 
@@ -61,14 +64,34 @@ class GitScraper:
         logger.info(f"Added repository: {repo_path}")
         return True
 
-    def scan_commits_since(self, repo_path: Path, since: datetime) -> int:
+    def scan_commits_since(self, repo_path: Path, since: datetime, max_commits: int = 10000) -> int:
         from src.gitflow.models import Repository, Commit, CommitFile
 
-        repo = Repo(repo_path)
-        repository = self.db.query(Repository).filter_by(path=str(repo_path)).first()
+        try:
+            repo = Repo(repo_path)
+        except InvalidGitRepositoryError:
+            logger.error(f"Invalid git repository at {repo_path}")
+            return 0
+        except Exception as e:
+            logger.error(f"Error opening repo at {repo_path}: {e}")
+            return 0
+
+        try:
+            repository = self.db.query(Repository).filter_by(path=str(repo_path)).first()
+        except Exception as e:
+            logger.error(f"Database error querying repository {repo_path}: {e}")
+            return 0
 
         if not repository:
             logger.warning(f"Repository {repo_path} not tracked")
+            return 0
+
+        try:
+            if not list(repo.heads):
+                logger.warning(f"Repository {repo_path} has no branches")
+                return 0
+        except Exception as e:
+            logger.error(f"Error checking branches for {repo_path}: {e}")
             return 0
 
         commits_added = 0
@@ -78,52 +101,84 @@ class GitScraper:
                 commits = list(repo.iter_commits(
                     branch,
                     since=since,
-                    reverse=True
+                    reverse=True,
+                    max_count=max_commits
                 ))
 
                 for commit_obj in commits:
-                    existing = self.db.query(Commit).filter_by(
-                        commit_hash=commit_obj.hexsha
-                    ).first()
-                    if existing:
+                    try:
+                        existing = self.db.query(Commit).filter_by(
+                            commit_hash=commit_obj.hexsha
+                        ).first()
+                        if existing:
+                            continue
+
+                        commit = self._parse_commit(commit_obj, repository, branch.name)
+                        self.db.add(commit)
+                        self.db.flush()
+
+                        files = self._parse_files(commit_obj, commit)
+                        for file in files:
+                            self.db.add(file)
+
+                        commits_added += 1
+
+                        if commits_added >= max_commits:
+                            logger.warning(f"Reached max_commits limit ({max_commits}) for {repo_path.name}")
+                            break
+
+                    except Exception as e:
+                        logger.error(f"Error parsing commit {commit_obj.hexsha[:8]}: {e}")
                         continue
 
-                    commit = self._parse_commit(commit_obj, repository, branch.name)
-                    self.db.add(commit)
-                    self.db.flush()
-
-                    files = self._parse_files(commit_obj, commit)
-                    for file in files:
-                        self.db.add(file)
-
-                    commits_added += 1
-
+            except GitCommandError as e:
+                logger.error(f"Git error processing branch {branch.name} of {repo_path.name}: {e}")
+                continue
             except Exception as e:
                 logger.error(f"Error processing branch {branch.name}: {e}")
+                continue
 
-        self.db.commit()
+        try:
+            self.db.commit()
+        except Exception as e:
+            logger.error(f"Database commit error for {repo_path}: {e}")
+            self.db.rollback()
+            return 0
+
         logger.info(f"Added {commits_added} commits from {repo_path.name}")
         return commits_added
 
     def _parse_commit(self, commit_obj: git.Commit, repository, branch: str):
         from src.gitflow.models import Commit
 
-        stats = commit_obj.stats.total
-        insertions = stats.get('insertions', 0)
-        deletions = stats.get('deletions', 0)
+        try:
+            stats = commit_obj.stats.total
+            insertions = stats.get('insertions', 0)
+            deletions = stats.get('deletions', 0)
+        except Exception:
+            insertions = 0
+            deletions = 0
+
+        author_name = commit_obj.author.name or 'Unknown'
+        author_email = commit_obj.author.email or ''
+        committer_name = commit_obj.committer.name or ''
+        committer_email = commit_obj.committer.email or ''
+
+        message = commit_obj.message or ''
+        message_summary = message.split('\n')[0] if message else ''
 
         commit = Commit(
             repo_id=repository.id,
             commit_hash=commit_obj.hexsha,
-            author=commit_obj.author.name,
-            author_email=commit_obj.author.email,
-            committer=commit_obj.committer.name,
-            committer_email=commit_obj.committer.email,
-            message=commit_obj.message,
-            message_summary=commit_obj.message.split('\n')[0],
+            author=author_name,
+            author_email=author_email,
+            committer=committer_name,
+            committer_email=committer_email,
+            message=message,
+            message_summary=message_summary,
             committed_date=datetime.fromtimestamp(commit_obj.committed_date),
             committed_unix=commit_obj.committed_date,
-            files_changed=len(commit_obj.stats.files),
+            files_changed=len(commit_obj.stats.files) if hasattr(commit_obj.stats, 'files') else 0,
             insertions=insertions,
             deletions=deletions,
             net_change=insertions - deletions,
@@ -138,44 +193,86 @@ class GitScraper:
 
         files = []
 
-        for filename, diff_info in commit_obj.stats.files.items():
-            file = CommitFile(
-                commit_id=commit.id,
-                file_path=filename,
-                status=self._get_file_status(commit_obj, filename),
-                insertions=diff_info.get('additions', 0),
-                deletions=diff_info.get('deletions', 0)
-            )
-            files.append(file)
+        try:
+            for filename, diff_info in commit_obj.stats.files.items():
+                file = CommitFile(
+                    commit_id=commit.id,
+                    file_path=filename,
+                    status=self._get_file_status(commit_obj, filename),
+                    insertions=diff_info.get('additions', 0),
+                    deletions=diff_info.get('deletions', 0)
+                )
+                files.append(file)
+        except Exception as e:
+            logger.warning(f"Error parsing files for commit {commit.commit_hash[:8]}: {e}")
 
         return files
 
     def _get_file_status(self, commit_obj: git.Commit, filename: str) -> str:
-        if len(commit_obj.parents) == 0:
-            return 'added'
+        try:
+            if len(commit_obj.parents) == 0:
+                return 'added'
 
-        parent = commit_obj.parents[0]
-
-        if filename in parent.stats.files:
+            parent = commit_obj.parents[0]
+            if filename in parent.stats.files:
+                return 'modified'
+            else:
+                return 'added'
+        except Exception:
             return 'modified'
-        else:
-            return 'added'
+
+    def _is_merge_commit(self, commit_obj: git.Commit) -> bool:
+        return len(commit_obj.parents) > 1
+
+    def _is_revert_commit(self, commit_obj: git.Commit) -> bool:
+        try:
+            message = commit_obj.message or ''
+            return message.startswith('Revert ')
+        except Exception:
+            return False
+
+    def _is_squash_commit(self, commit_obj: git.Commit) -> bool:
+        try:
+            message = commit_obj.message or ''
+            return len(commit_obj.parents) > 2 or '# This is a combination' in message
+        except Exception:
+            return False
 
     def get_tracked_repos(self) -> List[Path]:
         from src.gitflow.models import Repository
-        repos = self.db.query(Repository).filter_by(tracked=True).all()
-        return [Path(r.path) for r in repos]
+        try:
+            repos = self.db.query(Repository).filter_by(tracked=True).all()
+            return [Path(r.path) for r in repos if Path(r.path).exists()]
+        except Exception as e:
+            logger.error(f"Error getting tracked repos: {e}")
+            return []
 
-    def scan_all_repos(self) -> int:
+    def scan_all_repos(self, since: Optional[datetime] = None) -> int:
         repos = self.get_tracked_repos()
-        since = datetime.now() - timedelta(days=1)
+        if since is None:
+            since = datetime.now() - timedelta(days=1)
 
         total_commits = 0
         for repo_path in repos:
             try:
+                if not repo_path.exists():
+                    logger.warning(f"Repository path no longer exists: {repo_path}")
+                    continue
                 commits = self.scan_commits_since(repo_path, since)
                 total_commits += commits
+            except GitCommandError as e:
+                logger.error(f"Git error scanning {repo_path}: {e}")
+            except ConnectionError as e:
+                logger.error(f"Network error scanning {repo_path}: {e}")
             except Exception as e:
                 logger.error(f"Error scanning {repo_path}: {e}")
 
         return total_commits
+
+    def _handle_network_error(self, repo_path: Path, error: Exception) -> None:
+        logger.error(f"Network error for {repo_path}: {error}")
+        logger.info(f"Skipping {repo_path} due to network error")
+
+    def _handle_invalid_repo(self, repo_path: Path) -> bool:
+        logger.warning(f"Repository no longer valid: {repo_path}")
+        return False

@@ -1,6 +1,8 @@
 import click
 from pathlib import Path
 from datetime import datetime, timedelta
+from functools import wraps
+from git.exc import InvalidGitRepositoryError
 from src.gitflow.cli.commands.report import report
 from src.gitflow.cli.commands.setup import setup
 from src.gitflow.scraper.git_scraper import GitScraper
@@ -9,6 +11,27 @@ from src.gitflow.config import Config
 from rich.console import Console
 
 console = Console()
+
+
+def handle_errors(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        try:
+            return f(*args, **kwargs)
+        except InvalidGitRepositoryError as e:
+            console.print(f"[red]Invalid repository: {e}[/red]")
+            raise SystemExit(1)
+        except click.Abort:
+            raise
+        except click.ClickException:
+            raise
+        except Exception as e:
+            console.print(f"[red]Error: {e}[/red]")
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.exception("Unexpected error")
+            raise SystemExit(1)
+    return wrapper
 
 
 @click.group()
@@ -31,6 +54,7 @@ cli.add_command(setup)
 
 @cli.command()
 @click.argument('repo-path', type=click.Path(exists=True))
+@handle_errors
 def add(repo_path: str):
     """Add repository to tracking"""
     session = get_session()
@@ -46,6 +70,7 @@ def add(repo_path: str):
 
 @cli.command()
 @click.option('--since', default='1day', help='Since when (1day, 7days, 30days, or YYYY-MM-DD)')
+@handle_errors
 def scan(since: str):
     """Scan repositories for new commits"""
     from src.gitflow.models import Repository
@@ -90,6 +115,7 @@ def scan(since: str):
 
 @cli.command()
 @click.option('--days', default=30, help='Number of days for history')
+@handle_errors
 def history(days: int):
     """Show commit history"""
     from src.gitflow.models import Commit
@@ -126,6 +152,7 @@ def history(days: int):
 
 
 @cli.command()
+@handle_errors
 def init_service():
     """Initialize and start background service"""
     from src.gitflow.scheduler.background_service import BackgroundService
@@ -145,6 +172,7 @@ def init_service():
 
 @cli.command()
 @click.option('--port', default=8000, help='Port to serve on')
+@handle_errors
 def dashboard(port: int):
     """Launch web dashboard"""
     import uvicorn
@@ -153,9 +181,10 @@ def dashboard(port: int):
 
 
 @cli.command()
-@click.option('--format', 'fmt', default='csv', type=click.Choice(['csv', 'json']))
+@click.option('--format', 'fmt', default='csv', type=click.Choice(['csv', 'json', 'markdown']))
 @click.option('--output', default='gitflow_export', help='Output file name (without extension)')
 @click.option('--days', default=30, help='Days of history to export')
+@handle_errors
 def export(fmt: str, output: str, days: int):
     """Export commit data"""
     import csv
@@ -200,12 +229,23 @@ def export(fmt: str, output: str, days: int):
     elif fmt == 'json':
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2)
+    elif fmt == 'markdown':
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(f"# GitFlow Export\n\n")
+            f.write(f"**Period:** Last {days} days  \n")
+            f.write(f"**Total commits:** {len(data)}  \n\n")
+            f.write(f"## Commits\n\n")
+            f.write(f"| Date | Author | Message | Files | +/- |\n")
+            f.write(f"|------|--------|---------|-------|-----|\n")
+            for c in data:
+                f.write(f"| {c['date'][:10]} | {c['author']} | {c['message'][:50] or ''} | {c['files_changed']} | +{c['insertions']}/-{c['deletions']} |\n")
 
     console.print(f"[green]Exported {len(data)} commits to {filepath}[/green]")
     session.close()
 
 
 @cli.command()
+@handle_errors
 def repos():
     """List tracked repositories"""
     from src.gitflow.models import Repository
@@ -238,6 +278,7 @@ def repos():
 
 
 @cli.command()
+@handle_errors
 def config_show():
     """Show current configuration"""
     from rich.table import Table
@@ -263,6 +304,7 @@ def config_show():
 @cli.command()
 @click.argument('key')
 @click.argument('value')
+@handle_errors
 def config_set(key: str, value: str):
     """Set a configuration value (e.g. gitflow.scrape_interval_hours 2)"""
     config_data = Config._config if Config._config else Config.load()
@@ -294,6 +336,7 @@ def config_set(key: str, value: str):
 
 
 @cli.command()
+@handle_errors
 def config_reset():
     """Reset configuration to defaults"""
     Config.reset()
