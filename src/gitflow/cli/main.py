@@ -181,7 +181,8 @@ def dashboard(port: int):
     """Launch web dashboard"""
     import uvicorn
     console.print(f"[green]Starting dashboard on http://localhost:{port}[/green]")
-    uvicorn.run('src.gitflow.dashboard.api.main:app', host='0.0.0.0', port=port, reload=False)
+    # Use the correct import path for the FastAPI app. The package lives under the 'gitflow' top‑level package, not under a separate 'src' namespace.
+    uvicorn.run('gitflow.dashboard.api.main:app', host='0.0.0.0', port=port, reload=False)
 
 
 @cli.command()
