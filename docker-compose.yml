@@ -1,0 +1,18 @@
+version: '3.8'
+services:
+  gitflow-scraper:
+    build: .
+    volumes:
+      - gitflow_data:/root/.gitflow
+      - /path/to/your/repos:/repos:ro
+    environment:
+      - GITFLOW_ENV=production
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  gitflow_data:

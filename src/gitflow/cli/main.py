@@ -343,5 +343,48 @@ def config_reset():
     console.print("[green]Configuration reset to defaults[/green]")
 
 
+@cli.group()
+def token():
+    """Manage API authentication tokens"""
+    pass
+
+
+@token.command()
+@handle_errors
+def generate():
+    """Generate a new API token"""
+    from src.gitflow.dashboard.api.auth import generate_token
+    token = generate_token()
+    console.print(f"[green]New API token generated:[/green]")
+    console.print(f"[bold cyan]{token}[/bold cyan]")
+    console.print("\nUse this token in the Authorization header:")
+    console.print("  Authorization: Bearer <token>")
+
+
+@token.command()
+@handle_errors
+def show():
+    """Show current API token"""
+    from src.gitflow.dashboard.api.auth import get_token
+    token = get_token()
+    if token:
+        console.print(f"[green]Current API token:[/green]")
+        console.print(f"[bold cyan]{token}[/bold cyan]")
+    else:
+        console.print("[yellow]No API token set. Run 'gitflow token generate'[/yellow]")
+
+
+@token.command()
+@handle_errors
+def revoke():
+    """Revoke current API token"""
+    from src.gitflow.dashboard.api.auth import revoke_token
+    revoke_token()
+    console.print("[green]API token revoked[/green]")
+
+
+cli.add_command(token)
+
+
 if __name__ == '__main__':
     cli()
