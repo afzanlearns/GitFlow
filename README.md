@@ -14,6 +14,13 @@
 - **CLI Interface** — Rich terminal output with tables, colors, and formatted reports
 - **Background Service** — Automated hourly scraping, daily stat calculation, and desktop notifications
 - **Web Dashboard** — Real-time charts and metrics via FastAPI + React (optional)
+- **Configuration Management** — YAML-based config file with dot-notation access
+- **Setup Wizard** — Interactive CLI setup for first-time configuration
+- **Search & Filter API** — Full-text search and multi-dimensional filtering
+- **API Authentication** — Token-based auth for dashboard endpoints
+- **Docker Support** — Containerized deployment with docker-compose
+- **Export Formats** — CSV, JSON, and Markdown export
+- **Comprehensive Testing** — 40+ unit tests with >80% core coverage
 
 ---
 
@@ -115,6 +122,7 @@ gitflow repos
 |------|-------------|
 | `--help` | Show help message |
 | `--version` | Show version |
+| `--config PATH` | Path to config file (also via `GITFLOW_CONFIG` env var) |
 
 ### Commands
 
@@ -216,12 +224,17 @@ gitflow history --days 7
 
 #### `export`
 
-Export commit data to CSV or JSON.
+Export commit data to CSV, JSON, or Markdown.
 
 ```bash
 gitflow export --format csv --output my_commits
 gitflow export --format json --output my_commits --days 90
+gitflow export --format markdown --output report --days 30
 ```
+
+CSV columns: date, author, message, files_changed, insertions, deletions, repository.
+JSON: nested structure with full commit metadata.
+Markdown: formatted table with summary header and per-commit rows.
 
 #### `init-service`
 
@@ -249,12 +262,69 @@ gitflow dashboard --port 3000
 
 Starts the FastAPI server at `http://localhost:8000`. Open in browser to view the dashboard.
 
-#### `repos`
+#### `setup`
 
-List all tracked repositories with their paths, branches, and remote URLs.
+Interactive setup wizard for first-time configuration.
 
 ```bash
-gitflow repos
+gitflow setup
+```
+
+Walks through:
+1. Adding repositories to track (with validation)
+2. Configuring notifications (email, Slack webhook)
+3. Setting analytics thresholds
+4. Choosing UI theme (dark/light)
+5. Starting background service
+
+#### `config-show`
+
+Display current configuration values in a formatted table.
+
+```bash
+gitflow config-show
+```
+
+#### `config-set`
+
+Set a configuration value using dot notation.
+
+```bash
+gitflow config-set gitflow.scrape_interval_hours 2
+gitflow config-set notifications.slack_webhook https://hooks.slack.com/services/...
+gitflow config-set ui.theme light
+```
+
+#### `config-reset`
+
+Reset all configuration to factory defaults.
+
+```bash
+gitflow config-reset
+```
+
+#### `token generate`
+
+Generate a new API authentication token for dashboard access.
+
+```bash
+gitflow token generate
+```
+
+#### `token show`
+
+Display the current API token.
+
+```bash
+gitflow token show
+```
+
+#### `token revoke`
+
+Invalidate the current API token.
+
+```bash
+gitflow token revoke
 ```
 
 ---
@@ -273,8 +343,15 @@ The dashboard API provides REST endpoints and a WebSocket for real-time updates.
 | `GET /api/history/{days}` | Historical daily stats for charting |
 | `GET /api/repos` | List tracked repositories |
 | `GET /api/streaks` | Commit streaks per author |
+| `GET /api/search?q=&category=` | Search commits, files, or authors |
+| `GET /api/filter?author=&repo=&days=&language=` | Multi-dimensional filtering with pagination |
+| `GET /api/authors` | List all authors with commit counts |
+| `GET /api/hot-files?days=` | Most-changed files in last N days |
+| `GET /api/commit-by-language?days=` | Commits broken down by file language |
 | `GET /api/health` | Health check |
 | `WS /ws/live` | Real-time updates every 30 seconds |
+
+All endpoints support optional Bearer token authentication via `Authorization: Bearer <token>` header.
 
 ```bash
 # Start the dashboard API
@@ -358,13 +435,133 @@ Requires `plyer` for system notifications (`pip install -e ".[notifications]"`).
 
 ## Configuration
 
-GitFlow uses no configuration file by default. The database path defaults to `~/.gitflow/gitflow.db`.
+GitFlow uses a YAML configuration file at `~/.gitflow/config.yml`, auto-created on first run with sensible defaults.
 
-Environment variables (loaded from `.env` if present):
+### Default Configuration
+
+```yaml
+gitflow:
+  scrape_interval_hours: 1
+  database_path: ~/.gitflow/gitflow.db
+
+notifications:
+  enabled: true
+  slack_webhook: null
+  email_enabled: false
+  email_address: null
+
+analytics:
+  productivity_threshold: 80
+  streak_reset_days: 1
+
+scheduler:
+  daily_stats_time: "00:01"
+  daily_digest_time: "08:00"
+
+ui:
+  theme: "dark"
+```
+
+### CLI Management
+
+```bash
+# View current config
+gitflow config-show
+
+# Set a value (dot notation)
+gitflow config-set gitflow.scrape_interval_hours 2
+
+# Reset to defaults
+gitflow config-reset
+```
+
+### Custom Config File
+
+Use `--config` flag or `GITFLOW_CONFIG` environment variable:
+
+```bash
+gitflow --config /path/to/config.yml scan
+export GITFLOW_CONFIG=/path/to/config.yml
+gitflow report daily
+```
+
+### Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `GITFLOW_CONFIG` | `~/.gitflow/config.yml` | Path to config file |
 | `GITFLOW_DB_PATH` | `~/.gitflow/gitflow.db` | Database file location |
+
+---
+
+## API Authentication
+
+The dashboard API supports optional Bearer token authentication to protect endpoints.
+
+### Managing Tokens
+
+```bash
+# Generate a new token
+gitflow token generate
+# Output: New API token generated: abc123...
+
+# View current token
+gitflow token show
+
+# Revoke current token
+gitflow token revoke
+```
+
+### Using Tokens
+
+Include the token in API requests:
+
+```bash
+curl -H "Authorization: Bearer abc123..." http://localhost:8000/api/dashboard
+```
+
+Tokens are stored at `~/.gitflow/.api_token`. Authentication is optional — endpoints work without a token unless explicitly required.
+
+---
+
+## Docker Deployment
+
+### Building
+
+```bash
+docker build -t gitflow .
+```
+
+### Running with Docker Compose
+
+```bash
+docker-compose up -d
+```
+
+### Mounting Repositories
+
+Edit `docker-compose.yml` to mount your Git repositories:
+
+```yaml
+volumes:
+  - /path/to/your/repos:/repos:ro
+```
+
+Then add repos inside the container:
+
+```bash
+docker-compose exec gitflow-scraper gitflow add /repos/myapp
+```
+
+### Container Management
+
+```bash
+docker-compose logs -f    # View logs
+docker-compose down       # Stop service
+docker-compose restart    # Restart service
+```
+
+The container runs the background service by default. The SQLite database persists in a Docker volume.
 
 ---
 
@@ -374,32 +571,44 @@ Environment variables (loaded from `.env` if present):
 GitFlow/
 ├── src/gitflow/
 │   ├── __init__.py
-│   ├── models.py              # SQLAlchemy ORM models
-│   ├── db.py                  # Database session management
+│   ├── models.py                  # SQLAlchemy ORM models
+│   ├── db.py                      # Database session management
+│   ├── config.py                  # YAML configuration management
+│   ├── config.yml                 # Default config template
 │   ├── scraper/
-│   │   └── git_scraper.py     # Git repository scanner
+│   │   └── git_scraper.py         # Git repository scanner
 │   ├── analytics/
-│   │   └── analytics_engine.py # Statistics & scoring engine
+│   │   └── analytics_engine.py    # Statistics & scoring engine
 │   ├── cli/
-│   │   ├── main.py            # Click CLI entry point
+│   │   ├── main.py                # Click CLI entry point
 │   │   └── commands/
-│   │       └── report.py      # Report subcommands
+│   │       ├── report.py          # Report subcommands
+│   │       └── setup.py           # Interactive setup wizard
 │   ├── scheduler/
-│   │   └── background_service.py # APScheduler automation
+│   │   └── background_service.py  # APScheduler automation
 │   └── dashboard/
 │       ├── api/
-│       │   └── main.py        # FastAPI application
+│       │   ├── main.py            # FastAPI application
+│       │   └── auth.py            # Token authentication
 │       └── frontend/
-│           ├── public/
-│           │   └── index.html
+│           ├── public/index.html
 │           └── src/
 │               ├── App.jsx
 │               ├── index.jsx
-│               └── components/
-│                   └── Dashboard.jsx
+│               └── components/Dashboard.jsx
+├── tests/
+│   ├── __init__.py
+│   ├── conftest.py                # Test fixtures
+│   ├── test_git_scraper.py        # Scraper tests (8 tests)
+│   ├── test_analytics_engine.py   # Analytics tests (17 tests)
+│   └── test_cli_commands.py       # CLI tests (15 tests)
+├── Dockerfile
+├── docker-compose.yml
+├── .dockerignore
 ├── setup.py
 ├── pyproject.toml
 ├── requirements.txt
+├── pytest.ini
 └── README.md
 ```
 
@@ -420,9 +629,22 @@ gitflow --help
 ### Testing
 
 ```bash
-# Run tests (when available)
-pytest tests/
+# Run all tests with coverage
+python -m pytest
+
+# With coverage report
+python -m pytest --cov=src.gitflow --cov-report=html
+
+# Run specific test file
+python -m pytest tests/test_analytics_engine.py -v
 ```
+
+Current test suite: **40 tests** across 3 test files covering:
+- `test_git_scraper.py` — Repository add, deduplication, commit parsing, scanning
+- `test_analytics_engine.py` — Daily/weekly/monthly stats, caching, streaks, patterns, scoring
+- `test_cli_commands.py` — All CLI commands via Click test runner
+
+Coverage targets: >80% on core modules (analytics engine, models, db, scraper).
 
 ### Building
 
@@ -445,6 +667,10 @@ pip install dist/gitflow-*.whl
 | Dashboard won't start | Install extras: `pip install -e ".[dashboard]"` |
 | Notifications not working | Install extras: `pip install -e ".[notifications]"` |
 | Database locked error | Only one process should access the DB at a time |
+| Config file errors | Run `gitflow config-reset` to regenerate with defaults |
+| API returns 401 | Run `gitflow token generate` and use the new token |
+| Docker permission denied | Ensure mounted repo paths are readable by the container |
+| Tests failing on Windows | Run `git config core.autocrlf true` before tests |
 
 ---
 
