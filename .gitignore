@@ -12,3 +12,5 @@ build/
 .gitflow/
 .commandcode/
 .DS_Store
+.coverage
+htmlcov/
