@@ -95,6 +95,7 @@ class GitScraper:
             return 0
 
         commits_added = 0
+        affected_dates = set()
 
         for branch in repo.heads:
             try:
@@ -116,6 +117,7 @@ class GitScraper:
                         commit = self._parse_commit(commit_obj, repository, branch.name)
                         self.db.add(commit)
                         self.db.flush()
+                        affected_dates.add(commit.committed_date.date())
 
                         files = self._parse_files(commit_obj, commit)
                         for file in files:
@@ -144,6 +146,26 @@ class GitScraper:
             logger.error(f"Database commit error for {repo_path}: {e}")
             self.db.rollback()
             return 0
+
+        if affected_dates:
+            try:
+                from gitflow.models import DailyStat, WeeklyStat, MonthlyStat
+                self.db.query(DailyStat).filter(
+                    DailyStat.date.in_(list(affected_dates))
+                ).delete(synchronize_session=False)
+
+                week_starts = set((d - timedelta(days=d.weekday())) for d in affected_dates)
+                self.db.query(WeeklyStat).filter(
+                    WeeklyStat.week_start.in_(list(week_starts))
+                ).delete(synchronize_session=False)
+
+                month_keys = set((d.year, d.month) for d in affected_dates)
+                for yr, mo in month_keys:
+                    self.db.query(MonthlyStat).filter_by(year=yr, month=mo).delete(synchronize_session=False)
+
+                self.db.commit()
+            except Exception as e:
+                logger.warning(f"Failed to invalidate DailyStat cache: {e}")
 
         logger.info(f"Added {commits_added} commits from {repo_path.name}")
         return commits_added
