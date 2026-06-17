@@ -119,25 +119,56 @@ def scan(since: str):
 
 @cli.command()
 @click.option('--days', default=30, help='Number of days for history')
+@click.option('--limit', default=50, help='Commits per page')
+@click.option('--page', default=1, help='Page number (1-based)')
+@click.pass_context
 @handle_errors
-def history(days: int):
+def history(ctx, days: int, limit: int, page: int):
     """Show commit history"""
+    from click.core import ParameterSource
     from gitflow.models import Commit
     from rich.table import Table
+
+    source_days = ctx.get_parameter_source('days')
+    source_limit = ctx.get_parameter_source('limit')
+    source_page = ctx.get_parameter_source('page')
+
+    if all(s == ParameterSource.DEFAULT for s in [source_days, source_limit, source_page]):
+        console.print("[bold]gitflow history[/bold] — View commit history\n")
+        console.print("[bold cyan]Usage:[/bold cyan]")
+        console.print("  gitflow history                          # defaults: 50 per page, page 1")
+        console.print("  gitflow history --page 2                 # next 50")
+        console.print("  gitflow history --limit 100 --page 3     # 100 per page, page 3")
+        console.print("  gitflow history --days 90                # look back 90 days\n")
+        console.print("[bold cyan]Options:[/bold cyan]")
+        console.print("  --days   INTEGER   Number of days to look back [default: 30]")
+        console.print("  --limit  INTEGER   Commits per page [default: 50]")
+        console.print("  --page   INTEGER   Page number (1-based) [default: 1]")
+        return
 
     session = get_session()
     since = datetime.now() - timedelta(days=days)
 
-    commits = session.query(Commit).filter(
+    base_query = session.query(Commit).filter(
         Commit.committed_date >= since
-    ).order_by(Commit.committed_date.desc()).limit(20).all()
+    )
+
+    total = base_query.count()
+    total_pages = max(1, (total + limit - 1) // limit)
+    page = min(page, total_pages)
+    offset = (page - 1) * limit
+
+    commits = base_query.order_by(
+        Commit.committed_date.desc()
+    ).limit(limit).offset(offset).all()
 
     if not commits:
         console.print("[yellow]No commits found in this period[/yellow]")
         session.close()
         return
 
-    table = Table(title=f"Recent Commits (last {days} days)")
+    title = f"Commits (last {days} days) — page {page}/{total_pages} ({total} total)"
+    table = Table(title=title)
     table.add_column("Date", style="cyan")
     table.add_column("Author", style="magenta")
     table.add_column("Repo", style="green")
@@ -152,6 +183,10 @@ def history(days: int):
         )
 
     console.print(table)
+
+    if page < total_pages:
+        console.print(f"\n[dim]Page {page} of {total_pages}. Use --page {page + 1} for next page.[/dim]")
+
     session.close()
 
 
