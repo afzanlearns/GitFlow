@@ -78,7 +78,7 @@ class TestCliCommands:
     def test_cli_history(self, runner):
         result = runner.invoke(cli, ['history', '--days', '7'])
         assert result.exit_code == 0
-        assert 'Recent Commits' in result.output
+        assert 'Commits (last 7 days)' in result.output
 
     def test_cli_repos(self, runner):
         result = runner.invoke(cli, ['repos'])
