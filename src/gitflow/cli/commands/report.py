@@ -34,7 +34,7 @@ def daily(date: str):
     stats = analytics.get_daily_stats(target_date)
     score = analytics.get_productivity_score(target_date)
     patterns = analytics.detect_patterns(days=30)
-    repos = analytics.get_repository_breakdown()
+    repos = analytics.get_repository_breakdown(since_date=target_date)
 
     console.print(f"\n[bold]Daily Report - {target_date}[/bold]\n")
 
