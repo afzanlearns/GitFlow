@@ -15,9 +15,10 @@ class AnalyticsEngine:
         try:
             from gitflow.models import Commit, DailyStat
 
-            cached = self.db.query(DailyStat).filter_by(date=target_date).first()
-            if cached:
-                return self._serialize_daily_stat(cached)
+            if target_date != date.today():
+                cached = self.db.query(DailyStat).filter_by(date=target_date).first()
+                if cached:
+                    return self._serialize_daily_stat(cached)
 
             if target_date > date.today():
                 return {
@@ -68,6 +69,7 @@ class AnalyticsEngine:
                 commit_convention_score=convention_score
             )
 
+            self.db.query(DailyStat).filter_by(date=target_date).delete()
             self.db.add(daily_stat)
             self.db.commit()
 
@@ -90,9 +92,10 @@ class AnalyticsEngine:
 
             week_end = week_start + timedelta(days=6)
 
-            cached = self.db.query(WeeklyStat).filter_by(week_start=week_start).first()
-            if cached:
-                return self._serialize_weekly_stat(cached)
+            if week_end < date.today():
+                cached = self.db.query(WeeklyStat).filter_by(week_start=week_start).first()
+                if cached:
+                    return self._serialize_weekly_stat(cached)
 
             commits = self.db.query(Commit).filter(
                 and_(
@@ -128,6 +131,7 @@ class AnalyticsEngine:
                 most_active_day=most_active_day.isoformat() if most_active_day else None
             )
 
+            self.db.query(WeeklyStat).filter_by(week_start=week_start).delete()
             self.db.add(weekly)
             self.db.commit()
 
@@ -277,22 +281,33 @@ class AnalyticsEngine:
                 'daily_distribution': {}
             }
 
-    def get_repository_breakdown(self, days: int = 30) -> List[Dict]:
+    def get_repository_breakdown(self, days: int = 30, since_date: date = None) -> List[Dict]:
         try:
             from gitflow.models import Repository, Commit
 
-            since = datetime.now() - timedelta(days=days)
-
-            results = self.db.query(
-                Repository.name,
-                func.count(Commit.id).label('commit_count'),
-                func.sum(Commit.insertions).label('lines_added'),
-                func.sum(Commit.deletions).label('lines_deleted')
-            ).join(Commit).filter(
-                Commit.committed_date >= since
-            ).group_by(Repository.id).order_by(
-                func.count(Commit.id).desc()
-            ).all()
+            if since_date:
+                results = self.db.query(
+                    Repository.name,
+                    func.count(Commit.id).label('commit_count'),
+                    func.sum(Commit.insertions).label('lines_added'),
+                    func.sum(Commit.deletions).label('lines_deleted')
+                ).join(Commit).filter(
+                    func.date(Commit.committed_date) == since_date
+                ).group_by(Repository.id).order_by(
+                    func.count(Commit.id).desc()
+                ).all()
+            else:
+                since = datetime.now() - timedelta(days=days)
+                results = self.db.query(
+                    Repository.name,
+                    func.count(Commit.id).label('commit_count'),
+                    func.sum(Commit.insertions).label('lines_added'),
+                    func.sum(Commit.deletions).label('lines_deleted')
+                ).join(Commit).filter(
+                    Commit.committed_date >= since
+                ).group_by(Repository.id).order_by(
+                    func.count(Commit.id).desc()
+                ).all()
 
             return [
                 {
@@ -311,17 +326,21 @@ class AnalyticsEngine:
         try:
             from gitflow.models import Commit, MonthlyStat
 
-            cached = self.db.query(MonthlyStat).filter_by(year=year, month=month).first()
-            if cached:
-                return {
-                    'year': cached.year,
-                    'month': cached.month,
-                    'commit_count': cached.commit_count,
-                    'lines_added': cached.total_lines_added,
-                    'lines_deleted': cached.total_lines_deleted,
-                    'avg_per_day': cached.avg_commits_per_day,
-                    'productivity_score': cached.productivity_score
-                }
+            today = date.today()
+            is_current_month = (year == today.year and month == today.month)
+
+            if not is_current_month:
+                cached = self.db.query(MonthlyStat).filter_by(year=year, month=month).first()
+                if cached:
+                    return {
+                        'year': cached.year,
+                        'month': cached.month,
+                        'commit_count': cached.commit_count,
+                        'lines_added': cached.total_lines_added,
+                        'lines_deleted': cached.total_lines_deleted,
+                        'avg_per_day': cached.avg_commits_per_day,
+                        'productivity_score': cached.productivity_score
+                    }
 
             first_day = date(year, month, 1)
             if month == 12:
@@ -346,7 +365,18 @@ class AnalyticsEngine:
             total_deleted = sum(c.deletions or 0 for c in commits)
             avg_per_day = total_commits / days_in_month if days_in_month > 0 else 0
 
-            score = self.get_productivity_score(first_day)
+            freq_score = min(100, (avg_per_day / 5) * 100) * 0.3
+            quality_score = self._score_commit_messages(
+                [c.message_summary or '' for c in commits]
+            ) * 0.3
+            unique_files = len(set(
+                f.file_path for c in commits if c.files for f in c.files
+            ))
+            diversity_score = min(100, (unique_files / 20) * 100) * 0.2
+            time_spread = self._calculate_time_spread(commits)
+            consistency_score = time_spread * 0.2
+
+            score = min(100, freq_score + quality_score + diversity_score + consistency_score)
 
             monthly = MonthlyStat(
                 year=year,
@@ -358,6 +388,7 @@ class AnalyticsEngine:
                 productivity_score=score
             )
 
+            self.db.query(MonthlyStat).filter_by(year=year, month=month).delete()
             self.db.add(monthly)
             self.db.commit()
 
